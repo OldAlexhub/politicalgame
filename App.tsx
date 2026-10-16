@@ -25,7 +25,9 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [ready, setReady] = useState(false);
   const [adsReady, setAdsReady] = useState(false);
+  const [startingCampaign, setStartingCampaign] = useState(false);
   const settingsRef = useRef(settings);
+  const startingCampaignRef = useRef(false);
   const sessionStartedAt = useRef(Date.now());
   const appState = useRef(AppState.currentState);
 
@@ -87,13 +89,28 @@ function App() {
     saveSettings(next).catch(() => undefined);
   };
   const begin = async (configuration: CampaignConfiguration) => {
-    const next = createCampaign({mode: configuration.mode, candidateId: configuration.candidate.id, difficulty: configuration.difficulty, seed: configuration.seed});
-    next.policyVersion = await modelPolicy.getActiveVersion();
-    await queueAnalytics({schemaVersion: 1, event: 'campaign_start', occurredAt: new Date().toISOString(), mode: next.mode, difficulty: next.difficulty}, settings);
-    setCampaign(next);
-    await saveCampaign(next);
-    await refreshSaves();
-    setScreen('campaign');
+    if (startingCampaignRef.current) return;
+    startingCampaignRef.current = true;
+    setStartingCampaign(true);
+    try {
+      const next = createCampaign({mode: configuration.mode, candidateId: configuration.candidate.id, difficulty: configuration.difficulty, seed: configuration.seed});
+      next.policyVersion = await modelPolicy.getActiveVersion().catch(() => next.policyVersion);
+
+      // Enter gameplay before optional bookkeeping. A storage or telemetry failure
+      // must never strand the player on the setup screen or reject the press handler.
+      setCampaign(next);
+      setScreen('campaign');
+      saveCampaign(next)
+        .then(refreshSaves)
+        .catch(() => Alert.alert('Autosave unavailable', 'The campaign started, but it could not be saved on this device. You can keep playing and try saving again later.'));
+      queueAnalytics({schemaVersion: 1, event: 'campaign_start', occurredAt: new Date().toISOString(), mode: next.mode, difficulty: next.difficulty}, settings)
+        .catch(() => undefined);
+    } catch (error) {
+      Alert.alert('Could not start campaign', error instanceof Error ? error.message : 'The campaign could not be created.');
+    } finally {
+      startingCampaignRef.current = false;
+      setStartingCampaign(false);
+    }
   };
   const chooseConsent = (analytics: boolean, collectiveLearning: boolean) => {
     updateSettings({...settings, consent: {analytics, collectiveLearning, decidedAt: new Date().toISOString()}});
@@ -114,7 +131,7 @@ function App() {
   else if (screen === 'consent') content = <ConsentIntroScreen onChoose={chooseConsent} />;
   else if (screen === 'home') content = <HomeScreen onNew={() => setScreen('modes')} onLoad={() => { refreshSaves(); setScreen('saves'); }} onNavigate={setScreen} />;
   else if (screen === 'modes') content = <ModeSelectScreen onBack={() => setScreen('home')} onSelect={selected => { setMode(selected); setScreen('config'); }} />;
-  else if (screen === 'config') content = <CampaignConfigScreen mode={mode} onBack={() => setScreen('modes')} onStart={begin} />;
+  else if (screen === 'config') content = <CampaignConfigScreen mode={mode} starting={startingCampaign} onBack={() => setScreen('modes')} onStart={begin} />;
   else if (screen === 'campaign' && campaign) content = <CampaignScreen state={campaign} settings={settings} onChange={setCampaign} onExit={() => { refreshSaves(); setScreen('home'); }} />;
   else if (screen === 'saves') content = <SavesScreen saves={saves} onBack={() => setScreen('home')} onLoad={slot => { setCampaign(slot.state); setScreen('campaign'); }} onChanged={refreshSaves} />;
   else if (screen === 'achievements') content = <AchievementsScreen onBack={() => setScreen('home')} />;

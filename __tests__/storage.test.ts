@@ -1,7 +1,10 @@
 /* eslint-disable no-bitwise */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {createCampaign, processTurn} from '../src/game/engine';
-import {deleteSave, listSaves, loadCampaign, saveCampaign} from '../src/services/storage';
+import {
+  ACHIEVEMENTS, clearSavedCampaigns, deleteSave, listSaves, loadAchievements, loadCampaign,
+  loadSettings, saveCampaign, saveSettings, unlockAchievements,
+} from '../src/services/storage';
 
 beforeEach(() => AsyncStorage.clear());
 
@@ -49,6 +52,46 @@ test('migrates a version 1 save atomically and preserves pending consequences', 
   expect(committed.schemaVersion).toBe(2);
   expect(committed.state.schemaVersion).toBe(2);
   expect(committed.checksum).toBe(testChecksum(JSON.stringify(committed.state)));
+});
+
+test('clears every saved game while preserving settings and achievements', async () => {
+  const first = createCampaign({mode: 'presidential', seed: 12});
+  const second = createCampaign({mode: 'monarchy', seed: 13});
+  await saveCampaign(first);
+  await saveCampaign(second);
+  await AsyncStorage.setItem('@pss/save-v1/orphan.pending', 'orphan');
+  await saveSettings({...await loadSettings(), reduceMotion: true});
+  await unlockAchievements(processTurn(first, {id: 'fundraise'}).state);
+
+  await clearSavedCampaigns();
+
+  expect(await listSaves()).toEqual([]);
+  expect(await loadSettings()).toMatchObject({reduceMotion: true});
+  expect(await loadAchievements()).toContain('first-decision');
+  expect((await AsyncStorage.getAllKeys()).some(key => key.startsWith('@pss/save-v1/'))).toBe(false);
+});
+
+test('unlocks expanded campaign milestones', async () => {
+  const state = processTurn(createCampaign({mode: 'presidential', difficulty: 'strategist', seed: 14}), {id: 'fundraise'}).state;
+  state.turn = 10;
+  state.treasury = 9000;
+  state.publicSentiment = 7100;
+  state.legitimacy = 7200;
+  state.momentum = 7300;
+  state.factions.forEach(faction => { faction.support = 6600; });
+  state.institutions.forEach(institution => { institution.confidence = 6700; });
+  state.economy = {...state.economy, growth: 6100, employment: 6200, resilience: 6300};
+  state.status = 'victory';
+
+  const unlocked = await unlockAchievements(state);
+
+  expect(ACHIEVEMENTS).toHaveLength(16);
+  expect(unlocked).toEqual(expect.arrayContaining([
+    'first-decision', 'strategic-horizon', 'campaign-veteran', 'full-treasury',
+    'popular-mandate', 'legitimate-authority', 'momentum-surge', 'broad-coalition',
+    'united-front', 'institution-builder', 'resilient-economy', 'presidential-victory',
+    'master-strategist',
+  ]));
 });
 
 function testChecksum(value: string) {

@@ -1,1 +1,1 @@
-Version 1.0 introduces four complete fictional campaigns: Presidential Campaign, The Republic, The Crown, and The Transition. Includes deterministic strategy, political actors and factions, state and regional maps, local saves, achievements, optional collective AI learning, offline fallback opponents, privacy controls, and carefully capped advertising.
+Version 1.1.3 fixes a device-specific gameplay crash, adds one-tap deletion for all saved games, expands career achievements to 16 milestones, and updates the support contact.

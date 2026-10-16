@@ -4,7 +4,7 @@ import {APP} from '../../config/appConfig';
 import {CANDIDATES, MODE_COPY} from '../../game/scenarios';
 import {AppSettings, CandidateProfile, Difficulty, GameMode, SaveSlot} from '../../game/types';
 import {advertising} from '../../services/ads';
-import {deleteSave, loadAchievements} from '../../services/storage';
+import {ACHIEVEMENTS, clearSavedCampaigns, deleteSave, loadAchievements} from '../../services/storage';
 import {deleteServerTelemetry} from '../../services/telemetry';
 import {colors, radius, spacing} from '../theme';
 import {Card, GhostButton, HeroBrand, Meter, PrimaryButton, ScreenContainer, SectionTitle, TopBar, type} from '../components/Layout';
@@ -62,7 +62,7 @@ export function ModeSelectScreen({onBack, onSelect}: {onBack: () => void; onSele
 
 export interface CampaignConfiguration {mode: GameMode; candidate: CandidateProfile; difficulty: Difficulty; seed: number;}
 
-export function CampaignConfigScreen({mode, onBack, onStart}: {mode: GameMode; onBack: () => void; onStart: (configuration: CampaignConfiguration) => void}) {
+export function CampaignConfigScreen({mode, starting = false, onBack, onStart}: {mode: GameMode; starting?: boolean; onBack: () => void; onStart: (configuration: CampaignConfiguration) => void}) {
   const [candidate, setCandidate] = useState(CANDIDATES[0]);
   const [difficulty, setDifficulty] = useState<Difficulty>('standard');
   const [seedText, setSeedText] = useState(`${Math.floor(Date.now() / 86400000)}`);
@@ -89,7 +89,7 @@ export function CampaignConfigScreen({mode, onBack, onStart}: {mode: GameMode; o
           <Text style={[type.small, styles.spaceBottom]}>Share a seed to replay the same starting conditions and random sequence.</Text>
           <TextInput accessibilityLabel="Scenario seed" keyboardType="number-pad" value={seedText} onChangeText={value => setSeedText(value.replace(/[^0-9]/g, '').slice(0, 10))} placeholder="Seed" placeholderTextColor={colors.darkMuted} style={styles.input} />
         </Card>
-        <PrimaryButton label="Enter the political arena" disabled={!seedText} onPress={() => onStart({mode, candidate, difficulty, seed: Math.abs(Math.trunc(Number(seedText))) % 4294967296})} />
+        <PrimaryButton label={starting ? 'Preparing campaign…' : 'Enter the political arena'} disabled={!seedText || starting} onPress={() => onStart({mode, candidate, difficulty, seed: Math.abs(Math.trunc(Number(seedText))) % 4294967296})} />
       </ScreenContainer>
     </>
   );
@@ -99,6 +99,13 @@ export function SavesScreen({saves, onBack, onLoad, onChanged}: {saves: SaveSlot
   const remove = (slot: SaveSlot) => Alert.alert('Delete save?', `${slot.name} will be removed from this device.`, [
     {text: 'Cancel', style: 'cancel'},
     {text: 'Delete', style: 'destructive', onPress: async () => { await deleteSave(slot.slotId); onChanged(); }},
+  ]);
+  const removeAll = () => Alert.alert('Delete all saved games?', `${saves.length} saved campaign${saves.length === 1 ? '' : 's'} will be permanently removed from this device. Settings and achievements will be kept.`, [
+    {text: 'Cancel', style: 'cancel'},
+    {text: 'Delete all', style: 'destructive', onPress: async () => {
+      try { await clearSavedCampaigns(); await onChanged(); Alert.alert('Saved games deleted', 'All saved campaigns were removed.'); }
+      catch { Alert.alert('Could not delete saves', 'Please try again.'); }
+    }},
   ]);
   return (
     <>
@@ -112,20 +119,11 @@ export function SavesScreen({saves, onBack, onLoad, onChanged}: {saves: SaveSlot
             <View style={[styles.quickRow, styles.spaceTop]}><GhostButton label="Delete" onPress={() => remove(slot)} /><View style={styles.grow}><PrimaryButton label="Resume" onPress={() => onLoad(slot)} /></View></View>
           </Card>
         ))}
+        {saves.length ? <PrimaryButton label="Delete all saved games" onPress={removeAll} tone="danger" /> : null}
       </ScreenContainer>
     </>
   );
 }
-
-const ACHIEVEMENTS = [
-  ['strategic-horizon', 'Strategic Horizon', 'Reach turn five in any campaign.'],
-  ['full-treasury', 'Deep Reserves', 'Build a treasury of 8,000.'],
-  ['broad-coalition', 'Broad Coalition', 'Win majority support from every faction.'],
-  ['presidential-victory', 'The 270 Path', 'Win a presidential campaign.'],
-  ['dictatorship-victory', 'Durable Coalition', 'Survive the Republic campaign.'],
-  ['monarchy-victory', 'The Next Reign', 'Secure a stable dynasty.'],
-  ['peaceful-transition', 'Power Transformed', 'Complete a legitimate political transition.'],
-] as const;
 
 export function AchievementsScreen({onBack}: {onBack: () => void}) {
   const [unlocked, setUnlocked] = useState<string[]>([]);
@@ -205,13 +203,13 @@ function SettingRow({title, description, value, disabled = false, onChange}: {ti
 export function AboutScreen({onBack}: {onBack: () => void}) {
   return (
     <>
-      <TopBar title="About & legal" subtitle="Version 1.0.0" onBack={onBack} />
+      <TopBar title="About & legal" subtitle={`Version ${APP.version}`} onBack={onBack} />
       <ScreenContainer>
         <HeroBrand />
         <Card><Text style={styles.choiceTitle}>A fictional strategy game</Text><Text style={type.subtitle}>Political Strategy Simulator is an original, nonpartisan game by {APP.developer}. It is not affiliated with, endorsed by, or representative of any government, candidate, political party, or election authority. All candidates, countries, events, polls, and outcomes are fictional simulations.</Text></Card>
         <Card><Text style={styles.choiceTitle}>Free with advertising</Text><Text style={type.subtitle}>Every mode is free. There are no purchases, subscriptions, paid campaigns, energy timers, or rewarded ads. Google Mobile Ads may process advertising data subject to consent and Google’s policies.</Text></Card>
         <Card><Text style={styles.choiceTitle}>Open data notice</Text><Text style={type.subtitle}>The U.S. strategic map uses public-domain Census-derived boundary data distributed by us-atlas. Electoral votes use the 2020 census apportionment for the fictional 2028 scenario.</Text></Card>
-        <Card><Text style={type.label}>CONTACT</Text><Text style={type.body}>privacy@oldalexhub.example</Text><Text style={type.small}>Replace this documentation placeholder with a monitored address before public release.</Text></Card>
+        <Card><Text style={type.label}>CONTACT</Text><Text style={type.body}>{APP.supportEmail}</Text><Text style={type.small}>Support, privacy, and data requests.</Text></Card>
       </ScreenContainer>
     </>
   );

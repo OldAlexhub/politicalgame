@@ -96,7 +96,7 @@ The script finds Android Studio's JBR and SDK, writes `android/local.properties`
 
 ## Production checklist
 
-- Replace `privacy@oldalexhub.example` with a monitored support/privacy address in the app, privacy policy, and Play listing.
+- Monitor `info@oldalexhub.com` for support, privacy, and data requests.
 - Configure the HTTPS API endpoint and retain the installation-hash secret.
 - Back up the Android upload key and the model-signing private key. Never put either in a release package.
 - Exercise the UMP consent flow, test ads, model download, offline fallback, edge-to-edge layout, and deletion on physical devices in target regions.

@@ -60,4 +60,4 @@ Reasonable safeguards are used, but no system is perfectly secure. Data may be p
 **Old Alex Hub**
 Email: **info@oldalexhub.com**
 
-The address above is a release-blocking placeholder and must be replaced with a monitored contact before publication.
+This monitored address handles support, privacy, and data requests.

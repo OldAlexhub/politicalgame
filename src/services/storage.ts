@@ -6,6 +6,25 @@ const SAVE_INDEX_KEY = '@pss/save-index-v1';
 const SETTINGS_KEY = '@pss/settings-v1';
 const ACHIEVEMENTS_KEY = '@pss/achievements-v1';
 
+export const ACHIEVEMENTS = [
+  ['first-decision', 'First Move', 'Commit your first strategic decision.'],
+  ['strategic-horizon', 'Strategic Horizon', 'Reach turn five in any campaign.'],
+  ['campaign-veteran', 'The Long Game', 'Reach turn ten in a campaign.'],
+  ['full-treasury', 'Deep Reserves', 'Build a treasury of 8,000.'],
+  ['popular-mandate', 'Popular Mandate', 'Raise public sentiment to 70%.'],
+  ['legitimate-authority', 'Legitimate Authority', 'Raise legitimacy to 70%.'],
+  ['momentum-surge', 'Momentum Surge', 'Build campaign momentum to 70%.'],
+  ['broad-coalition', 'Broad Coalition', 'Win majority support from every faction.'],
+  ['united-front', 'United Front', 'Raise every faction to at least 65% support.'],
+  ['institution-builder', 'Institution Builder', 'Raise every institution to at least 65% confidence.'],
+  ['resilient-economy', 'Resilient Economy', 'Reach 60% growth, employment, and resilience.'],
+  ['presidential-victory', 'The 270 Path', 'Win a presidential campaign.'],
+  ['dictatorship-victory', 'Durable Coalition', 'Survive the Republic campaign.'],
+  ['monarchy-victory', 'The Next Reign', 'Secure a stable dynasty.'],
+  ['peaceful-transition', 'Power Transformed', 'Complete a legitimate political transition.'],
+  ['master-strategist', 'Master Strategist', 'Win or transition on Strategist difficulty.'],
+] as const;
+
 export const DEFAULT_SETTINGS: AppSettings = {
   reduceMotion: false,
   sound: true,
@@ -83,6 +102,11 @@ export async function deleteSave(slotId: string) {
   await AsyncStorage.setItem(SAVE_INDEX_KEY, JSON.stringify(ids.filter(id => id !== slotId)));
 }
 
+export async function clearSavedCampaigns() {
+  const saveKeys = (await AsyncStorage.getAllKeys()).filter(key => key === SAVE_INDEX_KEY || key.startsWith('@pss/save-v1/'));
+  await Promise.all(saveKeys.map(key => AsyncStorage.removeItem(key)));
+}
+
 export async function loadSettings(): Promise<AppSettings> {
   try {
     const stored = JSON.parse(await AsyncStorage.getItem(SETTINGS_KEY) ?? '{}');
@@ -101,11 +125,20 @@ export async function loadAchievements(): Promise<string[]> {
 export async function unlockAchievements(state: GameState): Promise<string[]> {
   const previous = await loadAchievements();
   const unlocked = new Set(previous);
+  if (state.actionHistory.length >= 1) unlocked.add('first-decision');
   if (state.turn >= 5) unlocked.add('strategic-horizon');
+  if (state.turn >= 10) unlocked.add('campaign-veteran');
   if (state.treasury >= 8000) unlocked.add('full-treasury');
+  if (state.publicSentiment >= 7000) unlocked.add('popular-mandate');
+  if (state.legitimacy >= 7000) unlocked.add('legitimate-authority');
+  if (state.momentum >= 7000) unlocked.add('momentum-surge');
   if (state.factions.every(faction => faction.support >= 5000)) unlocked.add('broad-coalition');
-  if (state.status === 'victory') unlocked.add(`${state.mode}-victory`);
+  if (state.factions.every(faction => faction.support >= 6500)) unlocked.add('united-front');
+  if (state.institutions.every(institution => institution.confidence >= 6500)) unlocked.add('institution-builder');
+  if (state.economy.growth >= 6000 && state.economy.employment >= 6000 && state.economy.resilience >= 6000) unlocked.add('resilient-economy');
+  if (state.status === 'victory' && state.mode !== 'coup') unlocked.add(`${state.mode}-victory`);
   if (state.status === 'transitioned') unlocked.add('peaceful-transition');
+  if ((state.status === 'victory' || state.status === 'transitioned') && state.difficulty === 'strategist') unlocked.add('master-strategist');
   const result = [...unlocked];
   await AsyncStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(result));
   return result;
