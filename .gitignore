@@ -33,6 +33,8 @@ local.properties
 .cxx/
 *.keystore
 !debug.keystore
+android/keystore.properties
+android/app/political-strategy-release.keystore
 .kotlin/
 
 # node.js

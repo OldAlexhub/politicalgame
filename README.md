@@ -1,97 +1,122 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Political Strategy Simulator
 
-# Getting Started
+**Gain Power. Rule Nations. Shape History.**
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+Political Strategy Simulator is a fictional, nonpartisan Android grand-strategy game by **Old Alex Hub**. It contains four offline-first campaigns, a deterministic political simulation, local saves, explainable fallback opponents, optional collective-learning telemetry, conservative AdMob placement, and a controlled ONNX policy update path.
 
-## Step 1: Start Metro
+The game does not claim to predict real elections, is not affiliated with a government or political organization, and does not collect a player's real political beliefs for its learning dataset.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## What is implemented
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+- Presidential campaign across 50 states and Washington, D.C., using the 538-elector 2020 census apportionment for a fictional 2028 election.
+- Fictional Republic, Monarchy, and Political Transition campaigns with distinct institutions, factions, actors, resources, objectives, and endings.
+- Versioned, fixed-point TypeScript simulation with seeded randomness, legal actions, immediate/delayed effects, actor memory, procedural event chains, AI turns, campaign results, and replay-compatible state.
+- Integrity-checked multiple local save slots using a two-phase commit over the native AsyncStorage key-value database.
+- U.S. state boundaries from the public-domain Census-derived `us-atlas` dataset, rendered locally with no paid map service.
+- Explicit gameplay analytics/collective-learning opt-in, separate from Google advertising consent.
+- AdMob via `react-native-google-mobile-ads`, with Google test IDs in debug builds and the supplied production IDs in release builds.
+- Signed policy manifests, SHA-256 model verification, compatibility checks, atomic activation, campaign policy pinning, rollback, ONNX Runtime inference, and a deterministic fallback.
+- Express/SQLite backend with secure admin sessions, CSRF protection, validation, deletion, real aggregation, dataset creation, training orchestration, and a private dashboard.
+- Python Gymnasium environment, behavior cloning, Conservative Q-Learning (offline RL), self-play league training, evaluation gates, ONNX export, and cross-language golden fixtures.
 
-```sh
-# Using npm
-npm start
+## Requirements
 
-# OR using Yarn
-yarn start
-```
+- Windows 10/11 for `release.py` automation (ordinary development can use another supported React Native host).
+- Node.js 22.11 or newer.
+- Python 3.11 or newer.
+- Android Studio with its bundled JBR, Android SDK Platform 36, build tools, platform-tools, and an emulator/device.
 
-## Step 2: Build and run your app
+The Android project targets API 36. Google Play requires new phone/tablet apps and updates to target Android 16/API 36 starting August 31, 2026; verify the policy again immediately before submission: [Google Play target API requirements](https://support.google.com/googleplay/android-developer/answer/11926878).
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+## Run the Android app
 
-### Android
-
-```sh
-# Using npm
+```powershell
+cd strategy
+npm install
+npm test -- --runInBand
+npm run lint
+npx tsc --noEmit
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+Core campaigns do not require the server. To connect optional telemetry/model updates, set `apiBaseUrl` in `src/config/appConfig.ts` to an HTTPS production endpoint. Do not use cleartext HTTP in a release build.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Run the server
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```powershell
+cd server
+npm install
+$env:PSS_INSTALL_HASH_SECRET = '<long-random-secret>'
+npm run create-admin
+npm start
 ```
 
-Then, and every time you update your native dependencies, run:
+Open `http://localhost:8787/` and sign in with the administrator account. In production, terminate TLS at a hardened reverse proxy, set `NODE_ENV=production`, use a durable `PSS_INSTALL_HASH_SECRET`, and configure backups.
 
-```sh
-bundle exec pod install
+## Train a small baseline
+
+```powershell
+cd server
+python -m pip install -r ml/requirements.txt
+python ml/cli.py baseline --episodes 64 --epochs 8 --seeds 24 --model-dir data/models
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+The command bootstraps deterministic self-play experiences when no consented dataset exists, trains a reward-weighted behavior-cloning policy, evaluates it against scripted and random policies over fixed seeds/modes/difficulties, exports ONNX, validates PyTorch/ONNX numerical parity, and writes an **unapproved candidate** manifest. Training completion never deploys a model.
 
-```sh
-# Using npm
-npm run ios
+See [ML methodology](docs/ML.md), [server deployment](docs/SERVER.md), and [Android release](docs/ANDROID_RELEASE.md).
 
-# OR using Yarn
-yarn ios
+## Tests
+
+```powershell
+# Mobile simulation, persistence, ads, and render smoke test
+cd strategy
+npm test -- --runInBand
+
+# Backend security, ingestion, aggregation, deletion, and datasets
+cd ..\server
+npm test
+
+# Gym environment, training, offline RL, self-play, and ONNX parity
+python -m pytest ml/tests -q
+
+# Windows release automation
+cd ..
+python -m pytest tests -q
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## Build release artifacts
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+```powershell
+python release.py --check-env
+python release.py --generate-key-only
+python release.py --skip-screenshots
+```
 
-## Step 3: Modify your app
+The script finds Android Studio's JBR and SDK, writes `android/local.properties`, creates/reuses an ignored upload keystore, builds a signed APK and AAB, and packages release materials under `releases/`. The AAB is the Google Play artifact. Back up the keystore and its properties together in an encrypted secret store.
 
-Now that you have successfully run the app, let's make changes!
+## Production checklist
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+- Replace `privacy@oldalexhub.example` with a monitored support/privacy address in the app, privacy policy, and Play listing.
+- Configure the HTTPS API endpoint and retain the installation-hash secret.
+- Back up the Android upload key and the model-signing private key. Never put either in a release package.
+- Exercise the UMP consent flow, test ads, model download, offline fallback, edge-to-edge layout, and deletion on physical devices in target regions.
+- Review the verified API 36 emulator screenshots in `releases/screenshots/` and recapture them on the final physical-device matrix if needed.
+- Complete Play Console Data safety, content rating, ads declaration, privacy-policy URL, and political-content review using the actual deployed behavior.
+- Run dependency audit and update/mitigate transitive findings before submission.
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+## Project layout
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+```text
+strategy/                 React Native Android app
+  src/game/               deterministic simulation and scenarios
+  src/services/           saves, consented telemetry, ads, model policy
+  src/ui/                 shared layouts, screens, map, dashboards
+  docs/                    mechanics, mathematics, ML, operations, release
+  store_assets/            Play listing copy and compliance notes
+server/                   Express API and private dashboard
+  src/                     auth, validation, database, operations
+  ml/                      training/evaluation/export pipeline
+shared/                   cross-language contracts and golden fixtures
+release.py                Windows signing/build/package automation
+releases/                 generated artifacts (not source)
+```

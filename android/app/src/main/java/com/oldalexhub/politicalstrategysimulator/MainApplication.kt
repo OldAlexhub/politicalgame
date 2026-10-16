@@ -1,4 +1,4 @@
-package com.strategy
+package com.oldalexhub.politicalstrategysimulator
 
 import android.app.Application
 import com.facebook.react.PackageList
@@ -8,15 +8,10 @@ import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 
 class MainApplication : Application(), ReactApplication {
-
   override val reactHost: ReactHost by lazy {
     getDefaultReactHost(
       context = applicationContext,
-      packageList =
-        PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
-        },
+      packageList = PackageList(this).packages,
     )
   }
 

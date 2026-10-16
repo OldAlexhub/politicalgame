@@ -1,4 +1,11 @@
 {
-  "name": "strategy",
-  "displayName": "strategy"
+  "name": "PoliticalStrategySimulator",
+  "displayName": "Political Strategy Simulator",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-7831002909037560~4080202967",
+    "android_sdk": "classic",
+    "delay_app_measurement_init": true,
+    "optimize_initialization": true,
+    "optimize_ad_loading": true
+  }
 }

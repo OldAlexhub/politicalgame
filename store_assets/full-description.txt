@@ -1,0 +1,37 @@
+Gain Power. Rule Nations. Shape History.
+
+Political Strategy Simulator is a deep, fictional political grand-strategy game where every decision changes a persistent world.
+
+WIN THE MAP
+Run a complete fictional U.S. presidential campaign across all 50 states and Washington, D.C. Manage a campaign treasury, rallies, advertising, debates, endorsements, momentum, uncertainty, and a thinking rival. Build a state-by-state path to 270 and watch every electoral vote resolve on election night.
+
+RULE A FRAGILE REPUBLIC
+Balance ministers, technocrats, provincial leaders, civic reformers, security institutions, public confidence, corruption pressure, and a living economy. Retain power, negotiate a constitutional transition, or watch the coalition fracture.
+
+SECURE THE CROWN
+Guide a fictional kingdom through court rivalries, economic pressure, noble families, institutions, alliances, character aging, and succession. Prepare an heir, negotiate a charter, and decide what kind of monarchy survives you.
+
+BUILD A LEGITIMATE TRANSITION
+Compete for authority during a fictional national crisis through coalition building, legal institutions, public confidence, recognition, administration, and post-transition government. Momentum is not enough: the system you build must endure.
+
+A POLITICAL SYSTEM, NOT RANDOM TRIVIA
+Actors remember your choices. Factions have priorities and influence. Economic decisions mature over time. Conditional event chains emerge from the political situation. Opponents respond to resources and vulnerabilities under the same rules.
+
+PLAY YOUR WAY
+• Four complete campaign modes
+• Deterministic scenario seeds
+• Multiple difficulties and endings
+• Local autosaves and campaign archive
+• Achievements and detailed history
+• Interactive strategic maps and dashboards
+• Offline core gameplay
+• No account required
+• No purchases, subscriptions, energy limits, or paid modes
+
+OPTIONAL COLLECTIVE AI
+If you explicitly opt in, minimized pseudonymous gameplay transitions can contribute to controlled batch training for future opponent policies. Gameplay analytics and advertising consent are separate. You can decline and still play everything.
+
+FREE WITH ADS
+Carefully capped ads appear only in noncritical spaces and natural transitions. Ads never interrupt a political choice, crisis, debate, map interaction, or save.
+
+All people, countries, parties, polls, events, and outcomes are fictional. Political Strategy Simulator is nonpartisan, is not affiliated with any government or political organization, and does not predict real elections.

@@ -8,3 +8,7 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# Required by Google UMP in minified release builds so consent can be gathered
+# before the Mobile Ads SDK starts requesting inventory.
+-keep class com.google.android.gms.internal.consent_sdk.** { *; }
