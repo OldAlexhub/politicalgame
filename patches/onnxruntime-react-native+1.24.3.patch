@@ -15,3 +15,21 @@ index 41b4359..0eafb8e 100644
  
    // By default it will just include onnxruntime full aar package
    if (ortExtensionsEnabled) {
+diff --git a/node_modules/onnxruntime-react-native/android/CMakeLists.txt b/node_modules/onnxruntime-react-native/android/CMakeLists.txt
+--- a/node_modules/onnxruntime-react-native/android/CMakeLists.txt
++++ b/node_modules/onnxruntime-react-native/android/CMakeLists.txt
+@@ -80,6 +80,14 @@ add_library(
+   ../cpp/SessionUtils.cpp
+   ../cpp/TensorUtils.cpp)
+ 
++# NDK r27 does not opt into flexible/16 KB ELF page alignment by default.
++# Google Play requires every bundled 64-bit native library to use at least
++# 16 KB LOAD-segment alignment, so explicitly align this JSI bridge.
++target_link_options(
++  onnxruntimejsi PRIVATE
++  "-Wl,-z,max-page-size=16384"
++  "-Wl,-z,common-page-size=16384")
++
+ # Configure C++ 17
+ set_target_properties(
+   onnxruntimejsi
