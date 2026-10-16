@@ -1,6 +1,6 @@
 # Privacy Policy — Political Strategy Simulator
 
-**Developer:** Old Alex Hub  
+**Developer:** Old Alex Hub
 **Effective date:** October 15, 2026
 
 Political Strategy Simulator is a fictional, free-with-ads Android game. This policy explains the information processed when you use the game, the choices available to you, and how optional collective AI learning works.
@@ -57,7 +57,7 @@ Reasonable safeguards are used, but no system is perfectly secure. Data may be p
 
 ## Contact
 
-**Old Alex Hub**  
-Email: **privacy@oldalexhub.example**
+**Old Alex Hub**
+Email: **info@oldalexhub.com**
 
 The address above is a release-blocking placeholder and must be replaced with a monitored contact before publication.
