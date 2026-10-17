@@ -148,7 +148,6 @@ function WorldMapView({state, onNavigate}: {state: GameState; onNavigate: (view:
   const world = state.world;
   if (!world) return <ScreenContainer><Text style={type.title}>World record unavailable</Text></ScreenContainer>;
   const owned = world.territories.filter(item => item.ownerId === world.playerNationId).length;
-  const playerName = world.nations.find(item => item.player)?.name ?? 'Orinth';
   return <ScreenContainer>
     <Text style={type.title}>The living world</Text>
     <Text style={type.subtitle}>A century of shifting borders, rival governments, trade, and war. Neighbor states act between your decisions; occupied land can be liberated.</Text>

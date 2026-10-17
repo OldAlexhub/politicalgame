@@ -152,7 +152,7 @@ export function advanceWorld(state: GameState): WorldNews[] {
       publish(`Uprising retakes ${land.name}`, 'Local resistance has driven the occupying garrison out. Orinth regains the land, but now has to protect it.', 'crisis');
     }
   }
-  const hostile = world.nations.filter(item => !item.player && !item.atWar && !item.allied && item.relation <= -45 && owned.some(territory => territory.neighbors.some(id => world.territories.some(border => border.id === id && border.ownerId === item.id))));
+  const hostile = world.nations.filter(item => !item.player && !item.atWar && !item.allied && item.relation <= -45 && owned.some(ownedTerritory => ownedTerritory.neighbors.some(id => world.territories.some(border => border.id === id && border.ownerId === item.id))));
   for (const nation of hostile) {
     const draw = nextRandom(state.randomState); state.randomState = draw.state;
     const threshold = 0.018 + nation.aggression / 180000;
