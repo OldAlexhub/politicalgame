@@ -2,20 +2,22 @@ import {createCampaign, extractFeatures, forecastAction, getLegalActions, proces
 import {getCampaignClock} from '../src/game/campaignClock';
 import {TOTAL_ELECTORAL_VOTES} from '../src/game/data/usStates';
 import {ActionInput, GameMode, GameState} from '../src/game/types';
+import {canUseWorldAction} from '../src/game/world';
 
 const golden = require('../../server/shared/golden-initial-states-v2.json') as {cases: Record<GameMode, number[]>};
 
 function firstInput(state: GameState): ActionInput {
   const action = getLegalActions(state)[0];
   if (!action) throw new Error('No legal action');
-  const targets = action.target === 'region' ? state.regions : action.target === 'faction' ? state.factions : action.target === 'actor' ? state.actors : action.target === 'institution' ? state.institutions : [];
-  return {id: action.id, targetId: action.target === 'none' ? undefined : targets[0].id};
+  const targets = action.target === 'region' ? state.regions : action.target === 'faction' ? state.factions : action.target === 'actor' ? state.actors : action.target === 'institution' ? state.institutions : action.target === 'nation' ? (state.world?.nations.filter(item => !item.player) ?? []) : action.target === 'territory' ? (state.world?.territories ?? []) : [];
+  const target = action.worldEffect ? targets.find(item => canUseWorldAction(state, action, item.id)) : targets[0];
+  return {id: action.id, targetId: action.target === 'none' ? undefined : target?.id};
 }
 
 function complete(state: GameState) {
   let next = state;
   let guard = 0;
-  while (next.status === 'active' && guard < 100) {
+  while (next.status === 'active' && guard < 200) {
     next = processTurn(next, firstInput(next)).state;
     guard += 1;
   }
@@ -114,6 +116,52 @@ describe('deterministic simulation engine', () => {
     expect(result.status).not.toBe('active');
     expect(result.result?.summary.length).toBeGreaterThan(20);
     expect(result.actionHistory.length).toBeGreaterThan(2);
+  });
+
+  it('runs the 120-year living-world campaign to a real ending', () => {
+    const result = complete(createCampaign({mode: 'grand_campaign', seed: 8401, createdAt: '2026-01-01T00:00:00.000Z'}));
+    expect(result.status).not.toBe('active');
+    expect(result.turn).toBeGreaterThan(100);
+    expect(result.world?.year).toBeGreaterThan(100);
+    expect(result.result?.summary.length).toBeGreaterThan(20);
+  });
+
+  it('supports commerce, alliances, war, conquest, peace, and resistance', () => {
+    const commerce = processTurn(createCampaign({mode: 'grand_campaign', seed: 90}), {id: 'trade-corridor', targetId: 'valedorn'}).state;
+    expect(commerce.world?.deals.some(deal => deal.nationId === 'valedorn' && deal.kind === 'trade')).toBe(true);
+    expect(commerce.world?.news.some(item => item.headline === 'New trade corridor')).toBe(true);
+
+    const alliance = processTurn(createCampaign({mode: 'grand_campaign', seed: 91}), {id: 'mutual-defense', targetId: 'valedorn'}).state;
+    expect(alliance.world?.nations.find(nation => nation.id === 'valedorn')?.allied).toBe(true);
+
+    let war = processTurn(createCampaign({mode: 'grand_campaign', seed: 92}), {id: 'declare-war', targetId: 'karsic'}).state;
+    expect(war.world?.wars.some(item => item.nationId === 'karsic' && !item.targetNationId)).toBe(true);
+    expect(war.world?.nations.find(nation => nation.id === 'karsic')?.atWar).toBe(true);
+    war.pendingEvent = null;
+    war.treasury = 10000;
+    war.influence = 10000;
+    war.randomState = 0;
+    war.world!.army = 10000;
+    war.world!.nations.find(nation => nation.id === 'karsic')!.power = 1000;
+    war.world!.territories.find(land => land.id === 'karsic-gate')!.wealth = 0;
+    war = processTurn(war, {id: 'invade-territory', targetId: 'karsic-gate'}).state;
+    expect(war.world?.territories.find(land => land.id === 'karsic-gate')?.ownerId).toBe('orinth');
+    war.pendingEvent = null;
+    war.influence = 10000;
+    war = processTurn(war, {id: 'negotiate-peace', targetId: 'karsic'}).state;
+    expect(war.world?.wars.some(item => item.nationId === 'karsic' && !item.targetNationId)).toBe(false);
+    expect(war.world?.nations.find(nation => nation.id === 'karsic')?.atWar).toBe(false);
+
+    const occupied = createCampaign({mode: 'grand_campaign', seed: 93});
+    const occupier = occupied.world!.nations.find(nation => nation.id === 'karsic')!;
+    const lostLand = occupied.world!.territories.find(land => land.id === 'iron-coast')!;
+    occupier.atWar = true;
+    lostLand.ownerId = occupier.id;
+    lostLand.formerPlayerLand = true;
+    occupied.world!.wars.push({id: 'occupation-test', nationId: occupier.id, yearsActive: 1, casualties: 100});
+    const resistance = processTurn(occupied, {id: 'organize-resistance', targetId: lostLand.id}).state;
+    expect(resistance.world?.territories.find(land => land.id === lostLand.id)?.resistance).toBeGreaterThan(0);
+    expect(resistance.world?.news.some(item => item.headline === 'Resistance network organized')).toBe(true);
   });
 
   it('resolves every electoral vote to one candidate on election night', () => {
