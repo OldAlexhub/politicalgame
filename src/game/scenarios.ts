@@ -1,5 +1,6 @@
 import {ActionDefinition, CandidateProfile, GameMode, GameState, Region} from './types';
 import {createUSRegions} from './data/usStates';
+import {createWorldState} from './world';
 
 export const CANDIDATES: CandidateProfile[] = [
   {id: 'mara-vale', name: 'Mara Vale', title: 'Coalition Mayor', archetype: 'coalition-builder', position: 'Civic Alliance'},
@@ -8,7 +9,7 @@ export const CANDIDATES: CandidateProfile[] = [
 ];
 
 type ScenarioSeed = Pick<GameState, 'scenarioName' | 'maxTurns' | 'treasury' | 'influence' | 'legitimacy' |
-  'publicSentiment' | 'momentum' | 'corruption' | 'economy' | 'regions' | 'actors' | 'factions' | 'institutions'>;
+  'publicSentiment' | 'momentum' | 'corruption' | 'economy' | 'regions' | 'actors' | 'factions' | 'institutions'> & Partial<Pick<GameState, 'world'>>;
 
 const fictionalRegions = (names: Array<[string, string]>): Region[] => names.map(([name, issue], index) => ({
   id: name.toLowerCase().replace(/\s/g, '-'), name, abbreviation: name.slice(0, 2).toUpperCase(),
@@ -17,6 +18,29 @@ const fictionalRegions = (names: Array<[string, string]>): Region[] => names.map
 }));
 
 export function createScenario(mode: GameMode): ScenarioSeed {
+  if (mode === 'grand_campaign') return {
+    scenarioName: 'The Orinthian Century', maxTurns: 120, treasury: 7200, influence: 4800,
+    legitimacy: 6200, publicSentiment: 5400, momentum: 5000, corruption: 1800,
+    economy: {growth: 5200, employment: 5400, inflation: 4100, inequality: 4800, resilience: 5600},
+    regions: fictionalRegions([['Orinth Capital', 'state capacity'], ['Iron Coast', 'industry'], ['Verdant Plain', 'food security'], ['North March', 'border defense'], ['Sunward Ports', 'foreign commerce']]),
+    actors: [
+      {id: 'chancellor', name: 'Sera Venn', role: 'Chancellor', factionId: 'council', loyalty: 7600, trust: 6900, ambition: 4600, riskTolerance: 3800, age: 44, memory: []},
+      {id: 'marshal', name: 'Kade Arven', role: 'Defense Marshal', factionId: 'defense', loyalty: 6500, trust: 5200, ambition: 7100, riskTolerance: 7700, age: 52, memory: []},
+      {id: 'merchant', name: 'Ilya Rook', role: 'Trade Syndicate envoy', factionId: 'merchants', loyalty: 5300, trust: 5700, ambition: 6400, riskTolerance: 6100, age: 39, memory: []},
+    ],
+    factions: [
+      {id: 'council', name: 'Civic Council', influence: 6300, support: 6100, cohesion: 6900, priorities: ['legitimacy', 'public works']},
+      {id: 'defense', name: 'Defense Directorate', influence: 7100, support: 5500, cohesion: 7200, priorities: ['readiness', 'borders']},
+      {id: 'merchants', name: 'Free Port Syndicate', influence: 6600, support: 5200, cohesion: 5800, priorities: ['trade', 'stable routes']},
+      {id: 'provincial', name: 'Provincial Compact', influence: 5400, support: 5700, cohesion: 6300, priorities: ['autonomy', 'local investment']},
+    ],
+    institutions: [
+      {id: 'assembly', name: "People's Assembly", authority: 7200, confidence: 6400, alignment: 5900},
+      {id: 'courts', name: 'High Tribunal', authority: 6500, confidence: 6100, alignment: 5200},
+      {id: 'army', name: 'General Staff', authority: 7800, confidence: 6700, alignment: 6500},
+    ],
+    world: createWorldState(),
+  };
   if (mode === 'presidential') {
     return {
       scenarioName: 'The Open 2028 Election', maxTurns: 14, treasury: 6800, influence: 3200,
@@ -138,6 +162,18 @@ export function getActions(mode: GameMode): ActionDefinition[] {
     {id: 'royal-marriage', label: 'Diplomatic marriage', description: 'Form an abstract dynastic alliance through mutual consent.', category: 'succession', cost: {treasury: 600, influence: 300}, target: 'none', effects: [{path: 'legitimacy', amount: 420}, {path: 'economy.resilience', amount: 250}], once: true},
     {id: 'charter-reform', label: 'Negotiate royal charter', description: 'Share authority to stabilize the crown for another generation.', category: 'transition', cost: {influence: 900}, target: 'institution', effects: [{path: 'institution.confidence', amount: 720}, {path: 'publicSentiment', amount: 420}, {path: 'faction.support', targetId: 'nobles', amount: -260}], minimumTurn: 7, once: true},
   ];
+  if (mode === 'grand_campaign') return [
+    ...commonActions,
+    {id: 'trade-corridor', label: 'Open trade corridor', description: 'Sign an eight-year trade pact. Earn annual revenue and improve relations, but war will disrupt it.', category: 'commerce', cost: {treasury: 300, influence: 250}, target: 'nation', effects: [{path: 'economy.growth', amount: 170}, {path: 'economy.resilience', amount: 90}], worldEffect: 'trade'},
+    {id: 'business-consortium', label: 'Sign business consortium', description: 'Fund a cross-border industrial contract for strong income and jobs; it increases supply-chain exposure.', category: 'commerce', cost: {treasury: 700, influence: 180}, target: 'nation', effects: [{path: 'economy.employment', amount: 230}, {path: 'economy.inequality', amount: 90}], worldEffect: 'business'},
+    {id: 'mutual-defense', label: 'Propose mutual-defense pact', description: 'Bind a friendly neighbor to mutual defense. This can deter attacks but may widen a future war.', category: 'diplomacy', cost: {influence: 650}, target: 'nation', effects: [{path: 'legitimacy', amount: 120}], worldEffect: 'alliance'},
+    {id: 'declare-war', label: 'Declare war', description: 'Open a war with a bordering sovereign. Trade ends, casualties rise every year, and only a treaty stops the conflict.', category: 'military', cost: {influence: 800, legitimacy: 350}, target: 'nation', effects: [{path: 'momentum', amount: 320}, {path: 'economy.growth', amount: -180}], worldEffect: 'declare-war'},
+    {id: 'negotiate-peace', label: 'Seek ceasefire', description: 'Offer a ceasefire to an enemy. It ends active combat and restores a little diplomatic trust, but leaves the border unsettled.', category: 'diplomacy', cost: {influence: 450}, target: 'nation', effects: [{path: 'legitimacy', amount: 180}, {path: 'publicSentiment', amount: 140}], worldEffect: 'peace'},
+    {id: 'mobilize-army', label: 'Mobilize reserves', description: 'Raise force readiness before an offensive or to deter a stronger neighbor.', category: 'military', cost: {treasury: 1100}, target: 'none', effects: [{path: 'influence', amount: -100}], worldEffect: 'mobilize'},
+    {id: 'invade-territory', label: 'Launch border offensive', description: 'Attack an adjacent enemy territory. Victory can extend your frontier; defeat costs lives, money, and public support.', category: 'military', cost: {treasury: 850, influence: 380}, target: 'territory', effects: [{path: 'momentum', amount: -120}], worldEffect: 'invade'},
+    {id: 'organize-resistance', label: 'Organize resistance', description: 'Arm and coordinate underground networks in occupied Orinthian land. They may liberate it in a later year.', category: 'military', cost: {treasury: 800, influence: 450}, target: 'territory', effects: [{path: 'legitimacy', amount: 110}], worldEffect: 'resistance'},
+    {id: 'rebuild-territory', label: 'Rebuild and pacify', description: 'Restore services and reduce unrest in a territory under Orinthian control.', category: 'economy', cost: {treasury: 650}, target: 'territory', effects: [{path: 'economy.resilience', amount: 90}], worldEffect: 'rebuild'},
+  ];
   return [
     ...commonActions,
     {id: 'national-dialogue', label: 'National dialogue', description: 'Invite rival blocs into a rules-bound public negotiation.', category: 'coalition', cost: {influence: 650}, target: 'faction', effects: [{path: 'faction.support', amount: 500}, {path: 'legitimacy', amount: 420}, {path: 'momentum', amount: -100}]},
@@ -151,4 +187,5 @@ export const MODE_COPY: Record<GameMode, {title: string; subtitle: string; objec
   dictatorship: {title: 'The Republic', subtitle: 'Power is a coalition, not a number.', objective: 'Balance elites, institutions, the economy, and a credible political future.', icon: '◆'},
   monarchy: {title: 'The Crown', subtitle: 'Rule today. Secure tomorrow.', objective: 'Steward the realm while building a stable and legitimate succession.', icon: '♛'},
   coup: {title: 'The Transition', subtitle: 'Authority without legitimacy is fragile.', objective: 'Assemble a lawful political transition and govern the coalition that follows.', icon: '⬡'},
+  grand_campaign: {title: 'The Living World', subtitle: '120 years. Every border is contested.', objective: 'Build a lasting power through trade, alliances, and war. Conquer or lose territory, survive occupation, and shape Orinth’s next century.', icon: '✧'},
 };

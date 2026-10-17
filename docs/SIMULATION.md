@@ -2,7 +2,7 @@
 
 Political quantities use integer basis points from 0 to 10,000 in the mobile engine. This avoids platform-dependent accumulation from UI floating-point calculations. Training observations normalize the same ordered values only at the learning boundary.
 
-The 16-feature observation contract is versioned in `shared/simulation-schema-v1.json`: turn progress, treasury, influence, legitimacy, sentiment, momentum, corruption, five economic indicators, average faction support/cohesion, institution confidence, and regional support. Cross-language initial-state fixtures live in `shared/golden-initial-states-v1.json` and are asserted by TypeScript and Python tests.
+The 16-feature observation contract is versioned in `server/shared/simulation-schema-v1.json`: turn progress, treasury, influence, legitimacy, sentiment, momentum, corruption, five economic indicators, average faction support/cohesion, institution confidence, and regional support. Cross-language initial-state fixtures live in `server/shared/golden-initial-states-v1.json` and are asserted by TypeScript and Python tests.
 
 ## Seeded probability
 

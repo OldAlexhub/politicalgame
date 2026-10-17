@@ -18,7 +18,7 @@ export function HomeScreen({onNew, onLoad, onNavigate}: {onNew: () => void; onLo
         <Card style={styles.featureCard}>
           <Text style={styles.featureKicker}>A LIVING POLITICAL SYSTEM</Text>
           <Text style={styles.featureTitle}>Every coalition remembers.</Text>
-          <Text style={type.subtitle}>Manage institutions, rivals, resources, and consequences across four complete campaigns.</Text>
+          <Text style={type.subtitle}>Manage institutions, rivals, resources, and consequences across four political campaigns or a 120-year living world.</Text>
         </Card>
         <PrimaryButton label="Begin a new campaign" onPress={onNew} />
         <PrimaryButton label="Resume from saves" onPress={onLoad} tone="dark" />
@@ -36,7 +36,7 @@ export function HomeScreen({onNew, onLoad, onNavigate}: {onNew: () => void; onLo
 export function ModeSelectScreen({onBack, onSelect}: {onBack: () => void; onSelect: (mode: GameMode) => void}) {
   return (
     <>
-      <TopBar title="Choose a campaign" subtitle="Four political systems" onBack={onBack} />
+      <TopBar title="Choose your universe" subtitle="Four political systems plus the Grand Campaign" onBack={onBack} />
       <ScreenContainer>
         <Text style={type.title}>What kind of power will you pursue?</Text>
         <Text style={type.subtitle}>Each mode uses the same deterministic simulation foundation with different institutions, incentives, and endings.</Text>

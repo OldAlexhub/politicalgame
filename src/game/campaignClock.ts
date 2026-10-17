@@ -13,11 +13,13 @@ const DEADLINES: Record<GameMode, string> = {
   dictatorship: 'Political settlement',
   monarchy: 'Succession council',
   coup: 'Interim authority deadline',
+  grand_campaign: "Century's end",
 };
 
 export function formatCampaignMoment(mode: GameMode, turn: number): string {
   const safeTurn = Math.max(1, Math.round(turn));
   if (mode === 'presidential') return `Week ${safeTurn}`;
+  if (mode === 'grand_campaign') return `Year ${safeTurn}`;
   if (mode === 'dictatorship') return `Month ${safeTurn}`;
   if (mode === 'monarchy') {
     const seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
@@ -32,7 +34,7 @@ export function getCampaignClock(mode: GameMode, turn: number, maxTurns: number)
   const completed = Math.max(0, Math.min(safeMax, Math.round(turn) - 1));
   const displayTurn = Math.max(1, Math.min(safeMax, Math.round(turn)));
   const remainingPeriods = Math.max(0, safeMax - completed);
-  const unit = mode === 'presidential' ? 'week' : mode === 'dictatorship' ? 'month' : mode === 'monarchy' ? 'season' : 'day';
+  const unit = mode === 'presidential' ? 'week' : mode === 'dictatorship' ? 'month' : mode === 'monarchy' ? 'season' : mode === 'grand_campaign' ? 'year' : 'day';
   const remainingAmount = mode === 'coup' ? remainingPeriods * 3 : remainingPeriods;
   return {
     periodLabel: formatCampaignMoment(mode, displayTurn),

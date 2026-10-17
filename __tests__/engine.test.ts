@@ -3,7 +3,7 @@ import {getCampaignClock} from '../src/game/campaignClock';
 import {TOTAL_ELECTORAL_VOTES} from '../src/game/data/usStates';
 import {ActionInput, GameMode, GameState} from '../src/game/types';
 
-const golden = require('../../shared/golden-initial-states-v1.json') as {cases: Record<GameMode, number[]>};
+const golden = require('../../server/shared/golden-initial-states-v1.json') as {cases: Record<GameMode, number[]>};
 
 function firstInput(state: GameState): ActionInput {
   const action = getLegalActions(state)[0];

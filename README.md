@@ -16,7 +16,7 @@ The game does not claim to predict real elections, is not affiliated with a gove
 - Explicit gameplay analytics/collective-learning opt-in, separate from Google advertising consent.
 - AdMob via `react-native-google-mobile-ads`, with Google test IDs in debug builds and the supplied production IDs in release builds.
 - Signed policy manifests, SHA-256 model verification, compatibility checks, atomic activation, campaign policy pinning, rollback, ONNX Runtime inference, and a deterministic fallback.
-- Express/SQLite backend with secure admin sessions, CSRF protection, validation, deletion, real aggregation, dataset creation, training orchestration, and a private dashboard.
+- Express/PostgreSQL backend with secure admin sessions, CSRF protection, validation, deletion, real aggregation, dataset creation, training orchestration, and a private dashboard.
 - Python Gymnasium environment, behavior cloning, Conservative Q-Learning (offline RL), self-play league training, evaluation gates, ONNX export, and cross-language golden fixtures.
 
 ## Requirements
@@ -116,7 +116,7 @@ strategy/                 React Native Android app
 server/                   Express API and private dashboard
   src/                     auth, validation, database, operations
   ml/                      training/evaluation/export pipeline
-shared/                   cross-language contracts and golden fixtures
+  shared/                  cross-language contracts and golden fixtures
 release.py                Windows signing/build/package automation
 releases/                 generated artifacts (not source)
 ```

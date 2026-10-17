@@ -72,9 +72,12 @@ class ModelPolicy {
         this.loadedVersion = cached.manifest.version;
       }
       const features = Float32Array.from(extractFeatures(state));
-      const output = await this.session.run({observation: new Tensor('float32', features, [1, 16])});
+      const output = await this.session.run({observation: new Tensor('float32', features, [1, 24])});
       const values = Array.from(output.action_scores.data as Float32Array);
-      return values.reduce((best, value, index) => value > values[best] ? index : best, 0);
+      const eligible = state.mode === 'grand_campaign'
+        ? this.legalWorldDirectives(state, values.length)
+        : this.legalDomesticDirectives(state, values.length);
+      return eligible.reduce((best, index) => values[index] > values[best] ? index : best, eligible[0] ?? 0);
     } catch {
       await this.rollback();
       return undefined;
@@ -102,7 +105,42 @@ class ModelPolicy {
   }
 
   private assertCompatible(manifest: ModelManifest) {
-    if (manifest.schemaVersion !== 1 || manifest.engineVersion !== ENGINE_VERSION || !/^\d+\.\d+\.\d+/.test(manifest.version)) throw new Error('Model is incompatible with this simulation version.');
+    if (manifest.schemaVersion !== 2 || manifest.engineVersion !== ENGINE_VERSION || !/^\d+\.\d+\.\d+/.test(manifest.version)) throw new Error('Model is incompatible with this simulation version.');
+  }
+
+  private legalWorldDirectives(state: GameState, outputSize: number) {
+    const features = extractFeatures(state);
+    const [territory, army, relations, wars, allies, deals, occupied, resistance] = features.slice(16);
+    const legal = [
+      wars < 0.01 && relations > 0.32,
+      wars < 0.01 && deals < 0.94,
+      wars < 0.01 && relations > 0.52 && allies < 0.95,
+      wars < 0.01 && relations < 0.74,
+      wars > 0.01,
+      army < 0.98,
+      wars > 0.01 && territory < 0.96,
+      occupied > 0.01 || resistance > 0.05,
+    ];
+    const eligible = legal.flatMap((isLegal, offset) => isLegal && offset + 8 < outputSize ? [offset + 8] : []);
+    return eligible.length ? eligible : (outputSize > 13 ? [13] : []);
+  }
+
+  private legalDomesticDirectives(state: GameState, outputSize: number) {
+    const features = extractFeatures(state);
+    const influence = features[2];
+    const treasury = features[1];
+    const legal = [
+      influence >= 0.05,
+      influence >= 0.05,
+      treasury >= 0.06,
+      treasury >= 0.06,
+      treasury >= 0.06,
+      true,
+      influence >= 0.05,
+      influence >= 0.05 && state.mode !== 'presidential' && state.turn >= Math.max(3, Math.floor(state.maxTurns / 2)),
+    ];
+    const eligible = legal.flatMap((isLegal, index) => isLegal && index < outputSize ? [index] : []);
+    return eligible.length ? eligible : (outputSize > 5 ? [5] : []);
   }
 
   private verifyManifest(manifest: ModelManifest) {

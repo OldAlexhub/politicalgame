@@ -12,6 +12,9 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		761780EF2CA45674006654EF /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EE2CA45674006654EF /* SceneDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		A10000000000000000000001 /* world_ambience.wav in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* world_ambience.wav */; };
+		A10000000000000000000002 /* breaking_news.wav in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* breaking_news.wav */; };
+		A10000000000000000000003 /* war_horn.wav in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* war_horn.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +29,9 @@
 		761780EE2CA45674006654EF /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SceneDelegate.swift; path = strategy/SceneDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = strategy/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		A20000000000000000000001 /* world_ambience.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = strategy/audio/world_ambience.wav; sourceTree = "<group>"; };
+		A20000000000000000000002 /* breaking_news.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = strategy/audio/breaking_news.wav; sourceTree = "<group>"; };
+		A20000000000000000000003 /* war_horn.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = strategy/audio/war_horn.wav; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -44,6 +50,9 @@
 			isa = PBXGroup;
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
+				A20000000000000000000001 /* world_ambience.wav */,
+				A20000000000000000000002 /* breaking_news.wav */,
+				A20000000000000000000003 /* war_horn.wav */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				761780EE2CA45674006654EF /* SceneDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -162,6 +171,9 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				A10000000000000000000001 /* world_ambience.wav in Resources */,
+				A10000000000000000000002 /* breaking_news.wav in Resources */,
+				A10000000000000000000003 /* war_horn.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

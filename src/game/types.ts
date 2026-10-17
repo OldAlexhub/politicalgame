@@ -1,4 +1,4 @@
-export type GameMode = 'presidential' | 'dictatorship' | 'monarchy' | 'coup';
+export type GameMode = 'presidential' | 'dictatorship' | 'monarchy' | 'coup' | 'grand_campaign';
 export type Difficulty = 'standard' | 'veteran' | 'strategist';
 export type CampaignStatus = 'active' | 'victory' | 'defeat' | 'transitioned' | 'conceded';
 export type ImpactTiming = 'cost' | 'immediate' | 'opponent' | 'systemic' | 'delayed' | 'event' | 'result';
@@ -69,6 +69,62 @@ export interface EconomicState {
   resilience: number;
 }
 
+export type WorldActionEffect = 'trade' | 'business' | 'alliance' | 'declare-war' | 'peace' | 'mobilize' | 'invade' | 'resistance' | 'rebuild';
+export interface WorldNation {
+  id: string;
+  name: string;
+  player: boolean;
+  relation: number;
+  power: number;
+  aggression: number;
+  allied: boolean;
+  atWar: boolean;
+  pactIds: string[];
+}
+export interface WorldTerritory {
+  id: string;
+  name: string;
+  ownerId: string;
+  neighbors: string[];
+  resource: string;
+  wealth: number;
+  unrest: number;
+  resistance: number;
+  formerPlayerLand: boolean;
+}
+export interface WorldDeal {
+  id: string;
+  nationId: string;
+  kind: 'trade' | 'business';
+  annualIncome: number;
+  yearsRemaining: number;
+  breachRisk: number;
+}
+export interface WorldWar {
+  id: string;
+  nationId: string;
+  targetNationId?: string;
+  yearsActive: number;
+  casualties: number;
+}
+export interface WorldNews {
+  id: string;
+  year: number;
+  headline: string;
+  detail: string;
+  severity: 'brief' | 'pressure' | 'crisis';
+}
+export interface WorldState {
+  year: number;
+  playerNationId: string;
+  army: number;
+  nations: WorldNation[];
+  territories: WorldTerritory[];
+  deals: WorldDeal[];
+  wars: WorldWar[];
+  news: WorldNews[];
+}
+
 export interface ScheduledEffect {
   id: string;
   dueTurn: number;
@@ -98,6 +154,8 @@ export interface EventChoice {
   description: string;
   effects: MetricChange[];
   delayedEffects?: Omit<ScheduledEffect, 'id' | 'dueTurn'> & {delay: number};
+  worldEffect?: WorldActionEffect;
+  target?: 'none' | 'nation' | 'territory';
 }
 
 export interface PoliticalEvent {
@@ -222,6 +280,7 @@ export interface GameState {
   momentum: number;
   corruption: number;
   economy: EconomicState;
+  world?: WorldState;
   regions: Region[];
   actors: PoliticalActor[];
   factions: PoliticalFaction[];
@@ -249,13 +308,14 @@ export interface ActionDefinition {
   id: string;
   label: string;
   description: string;
-  category: 'campaign' | 'policy' | 'coalition' | 'economy' | 'institution' | 'succession' | 'transition';
+  category: 'campaign' | 'policy' | 'coalition' | 'economy' | 'institution' | 'succession' | 'transition' | 'diplomacy' | 'commerce' | 'military';
   cost: Partial<Pick<GameState, 'treasury' | 'influence' | 'legitimacy'>>;
-  target: 'none' | 'region' | 'faction' | 'actor' | 'institution';
+  target: 'none' | 'region' | 'faction' | 'actor' | 'institution' | 'nation' | 'territory';
   effects: MetricChange[];
   delayedEffects?: Omit<ScheduledEffect, 'id' | 'dueTurn'> & {delay: number};
   minimumTurn?: number;
   once?: boolean;
+  worldEffect?: WorldActionEffect;
 }
 
 export interface TurnResult {
@@ -266,7 +326,7 @@ export interface TurnResult {
 }
 
 export interface GameplayExperience {
-  schemaVersion: 1;
+  schemaVersion: 2;
   gameMode: GameMode;
   engineVersion: string;
   policyVersion: string;

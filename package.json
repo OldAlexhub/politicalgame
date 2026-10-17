@@ -21,6 +21,7 @@
     "react-native": "0.88.0",
     "react-native-google-mobile-ads": "^17.2.0",
     "react-native-safe-area-context": "^5.5.2",
+    "react-native-sound": "^0.13.0",
     "react-native-svg": "^15.16.0",
     "topojson-client": "^3.1.0",
     "us-atlas": "^3.0.1"

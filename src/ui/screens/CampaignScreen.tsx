@@ -6,10 +6,12 @@ import {getCampaignClock, formatCampaignMoment} from '../../game/campaignClock';
 import {concedeCampaign, forecastAction, getLegalActions, processTurn, SimulationError} from '../../game/engine';
 import {campaignHealth, closestRegions, formatPercent, formatResource, projectedElectoralVotes} from '../../game/selectors';
 import {MODE_COPY} from '../../game/scenarios';
+import {canUseWorldAction} from '../../game/world';
 import {saveCampaign, unlockAchievements} from '../../services/storage';
 import {flushAnalytics, flushExperiences, queueAnalytics, queueExperience} from '../../services/telemetry';
 import {advertising} from '../../services/ads';
 import {modelPolicy} from '../../services/modelPolicy';
+import {playWorldCue, setWorldAmbience} from '../../services/worldAudio';
 import {colors, radius, spacing} from '../theme';
 import {Card, GhostButton, Meter, PrimaryButton, ScreenContainer, SectionTitle, StatPill, TopBar, type} from '../components/Layout';
 import {RegionalGrid, StrategicMap} from '../components/StrategicMap';
@@ -27,6 +29,10 @@ export function CampaignScreen({state, settings, onChange, onExit}: {state: Game
     if (state.status !== 'active') await advertising.showAtNaturalTransition();
     onExit();
   }, [onExit, state.status]);
+  useEffect(() => {
+    setWorldAmbience(settings.sound && state.mode === 'grand_campaign');
+    return () => setWorldAmbience(false);
+  }, [settings.sound, state.mode]);
   const acknowledgeReport = useCallback(async (naturalTransition: boolean) => {
     if (acknowledgingRef.current) return;
     const report = state.lastTurnReport;
@@ -70,6 +76,16 @@ export function CampaignScreen({state, settings, onChange, onExit}: {state: Game
       const turn = processTurn(state, input, directive);
       onChange(turn.state);
       setView('resolution');
+      const breakingNews = turn.state.world?.news.find(item => item.severity !== 'brief' && !state.world?.news.some(previous => previous.id === item.id));
+      const breakingEvent = turn.report.event;
+      if (breakingEvent) {
+        if (turn.state.mode === 'grand_campaign') playWorldCue('breaking_news.wav', settings.sound);
+        Alert.alert(`BREAKING NEWS · ${breakingEvent.severity.toUpperCase()}`, `${breakingEvent.title}\n\n${breakingEvent.narrative}`, [{text: 'Read the turn briefing'}]);
+      } else if (breakingNews) {
+        const conflict = /war|front|occup|uprising|assault|invasion|clash/i.test(breakingNews.headline);
+        playWorldCue(conflict ? 'war_horn.wav' : 'breaking_news.wav', settings.sound);
+        Alert.alert(breakingNews.severity === 'crisis' ? 'WORLD CRISIS' : 'WORLD PRESSURE', `${breakingNews.headline}\n\n${breakingNews.detail}`, [{text: 'Read the turn briefing'}]);
+      }
       if (settings.haptics) Vibration.vibrate(turn.report.event || turn.report.result ? 30 : 16);
       await Promise.all([
         saveCampaign(turn.state), queueExperience(turn.experience, settings), unlockAchievements(turn.state),
@@ -86,21 +102,21 @@ export function CampaignScreen({state, settings, onChange, onExit}: {state: Game
   const end = () => Alert.alert('Concede campaign?', 'The current political contest will end, but its final state remains in your campaign archive.', [
     {text: 'Continue playing', style: 'cancel'}, {text: 'Concede', style: 'destructive', onPress: async () => { const next = concedeCampaign(state); onChange(next); await saveCampaign(next); setView('statistics'); }},
   ]);
-  const body = view === 'resolution' && state.lastTurnReport ? <TurnBriefing state={state} report={state.lastTurnReport} settings={settings} busy={busy || acknowledging} onContinue={() => acknowledgeReport(true).catch(error => Alert.alert('Save failed', error instanceof Error ? error.message : 'The briefing could not be closed safely.'))} /> : state.status !== 'active' || view === 'statistics' ? <Results state={state} onExit={state.status === 'active' ? navigateBack : leaveCampaign} /> : view === 'brief' ? <Dashboard state={state} onNavigate={setView} /> : view === 'map' ? <MapView state={state} /> : view === 'decisions' ? <ActionCenter state={state} busy={busy} onSubmit={submit} /> : view === 'actors' ? <PoliticalNetwork state={state} /> : view === 'history' ? <History state={state} /> : view === 'finance' ? <Finance state={state} /> : view === 'intelligence' ? <Intelligence state={state} /> : <More state={state} onNavigate={setView} onSave={() => saveCampaign(state).then(() => Alert.alert('Campaign saved', 'The committed turn was saved with an integrity check.'))} onConcede={end} onExit={onExit} />;
+  const body = view === 'resolution' && state.lastTurnReport ? <TurnBriefing state={state} report={state.lastTurnReport} settings={settings} busy={busy || acknowledging} onContinue={() => acknowledgeReport(true).catch(error => Alert.alert('Save failed', error instanceof Error ? error.message : 'The briefing could not be closed safely.'))} /> : state.status !== 'active' || view === 'statistics' ? <Results state={state} onExit={state.status === 'active' ? navigateBack : leaveCampaign} /> : view === 'brief' ? <Dashboard state={state} onNavigate={setView} /> : view === 'map' ? state.mode === 'grand_campaign' ? <WorldMapView state={state} onNavigate={setView} /> : <MapView state={state} /> : view === 'decisions' ? <ActionCenter state={state} busy={busy} onSubmit={submit} /> : view === 'actors' ? <PoliticalNetwork state={state} /> : view === 'history' ? <History state={state} /> : view === 'finance' ? <Finance state={state} /> : view === 'intelligence' ? <Intelligence state={state} /> : <More state={state} onNavigate={setView} onSave={() => saveCampaign(state).then(() => Alert.alert('Campaign saved', 'The committed turn was saved with an integrity check.'))} onConcede={end} onExit={onExit} />;
   const clock = getCampaignClock(state.mode, state.turn, state.maxTurns);
   const subtitle = view === 'resolution' && state.lastTurnReport ? `${state.lastTurnReport.timeLabel} report · ${state.lastTurnReport.phaseBefore}` : `${clock.periodLabel} · ${state.phase}`;
   return (
     <>
       <TopBar title={state.scenarioName} subtitle={subtitle} onBack={navigateBack} right={<View style={styles.autosave}><View style={styles.autosaveDot} /><Text style={styles.autosaveText}>AUTO</Text></View>} />
       <View style={styles.flex}>{body}</View>
-      {state.status === 'active' && view !== 'resolution' ? <CampaignNav active={view} onChange={setView} /> : null}
+      {state.status === 'active' && view !== 'resolution' ? <CampaignNav active={view} mode={state.mode} onChange={setView} /> : null}
     </>
   );
 }
 
-function CampaignNav({active, onChange}: {active: CampaignView; onChange: (view: CampaignView) => void}) {
+function CampaignNav({active, mode, onChange}: {active: CampaignView; mode: GameState['mode']; onChange: (view: CampaignView) => void}) {
   const insets = useSafeAreaInsets();
-  const items: Array<[CampaignView, string, string]> = [['brief', '◫', 'Brief'], ['map', '⌁', 'Map'], ['decisions', '✦', 'Decide'], ['actors', '◎', 'Actors'], ['more', '•••', 'More']];
+  const items: Array<[CampaignView, string, string]> = [['brief', '◫', 'Brief'], ['map', '⌁', mode === 'grand_campaign' ? 'World' : 'Map'], ['decisions', '✦', 'Decide'], ['actors', '◎', 'Actors'], ['more', '•••', 'More']];
   return <View style={[styles.nav, {height: 68 + insets.bottom, paddingBottom: Math.max(insets.bottom, 4)}]}>{items.map(([id, icon, label]) => <Pressable accessibilityRole="tab" accessibilityState={{selected: active === id}} key={id} onPress={() => onChange(id)} style={styles.navItem}><Text style={[styles.navIcon, active === id && styles.navActive]}>{icon}</Text><Text style={[styles.navLabel, active === id && styles.navActive]}>{label}</Text></Pressable>)}</View>;
 }
 
@@ -112,6 +128,7 @@ function Dashboard({state, onNavigate}: {state: GameState; onNavigate: (view: Ca
   return <ScreenContainer>
     <CampaignClockCard state={state} />
     {state.pendingEvent ? <Pressable onPress={() => onNavigate('decisions')} style={styles.eventBanner}><View><Text style={styles.eventKicker}>{state.pendingEvent.severity.toUpperCase()}</Text><Text style={styles.eventTitle}>{state.pendingEvent.title}</Text><Text numberOfLines={2} style={styles.eventText}>{state.pendingEvent.narrative}</Text></View><Text style={styles.chevron}>›</Text></Pressable> : null}
+    {state.world?.news[0] ? <Pressable onPress={() => onNavigate('map')} style={[styles.eventBanner, state.world.news[0].severity === 'crisis' && styles.newsCrisis]}><View><Text style={styles.eventKicker}>WORLD DISPATCH · YEAR {state.world.news[0].year}</Text><Text style={styles.eventTitle}>{state.world.news[0].headline}</Text><Text numberOfLines={2} style={styles.eventText}>{state.world.news[0].detail}</Text></View><Text style={styles.chevron}>›</Text></Pressable> : null}
     <View style={styles.statRow}><StatPill label="Legitimacy" value={formatPercent(state.legitimacy)} tone={state.legitimacy >= 5200 ? 'good' : 'warning'} /><StatPill label="Treasury" value={formatResource(state.treasury)} /><StatPill label="Momentum" value={formatPercent(state.momentum)} /></View>
     {state.mode === 'presidential' ? <Card style={styles.projectionCard}><View style={styles.projectionRow}><View><Text style={type.label}>ELECTORAL PROJECTION</Text><Text style={styles.projection}>{projectedElectoralVotes(state)}<Text style={styles.projectionTarget}> / 270</Text></Text></View><View style={styles.raceBadge}><Text style={styles.raceBadgeText}>{projectedElectoralVotes(state) >= 270 ? 'LEADING' : 'PATH OPEN'}</Text></View></View><Meter value={Math.min(10000, projectedElectoralVotes(state) / 270 * 10000)} /></Card> : <Card style={styles.projectionCard}><Text style={type.label}>COALITION HEALTH</Text><Text style={styles.projection}>{formatPercent(health)}</Text><Meter value={health} color={health >= 5000 ? colors.teal : colors.red} /></Card>}
     {report ? <Card style={styles.recapCard}><View style={styles.projectionRow}><View><Text style={type.label}>SINCE {report.timeLabel.toUpperCase()}</Text><Text style={styles.rowTitle}>{report.actionLabel}{report.targetName ? ` · ${report.targetName}` : ''}</Text></View><Text style={[styles.recapMomentum, report.momentum.delta >= 0 ? styles.positive : styles.negative]}>{signedPoints(report.momentum.delta)} momentum</Text></View>{drivers.map(driver => <ImpactLine key={`${driver.path}-${driver.targetId ?? ''}-${driver.source}`} state={state} impact={driver} compact source={driver.source} />)}{state.scheduledEffects.length ? <Pressable onPress={() => onNavigate('history')}><Text style={styles.pendingLink}>{state.scheduledEffects.length} pending consequence{state.scheduledEffects.length === 1 ? '' : 's'} · view timeline</Text></Pressable> : null}</Card> : null}
@@ -127,11 +144,45 @@ function MapView({state}: {state: GameState}) {
   return <ScreenContainer><Text style={type.title}>{state.mode === 'presidential' ? 'The electoral map' : 'Regional influence'}</Text><Text style={type.subtitle}>{state.mode === 'presidential' ? 'Fictional support combines starting conditions, campaign investment, national momentum, turnout, rival strategy, and seeded uncertainty.' : 'Regional stability reflects coalition support, public confidence, investment, and local political priorities.'}</Text>{state.mode === 'presidential' ? <StrategicMap state={state} /> : <RegionalGrid state={state} />}</ScreenContainer>;
 }
 
+function WorldMapView({state, onNavigate}: {state: GameState; onNavigate: (view: CampaignView) => void}) {
+  const world = state.world;
+  if (!world) return <ScreenContainer><Text style={type.title}>World record unavailable</Text></ScreenContainer>;
+  const owned = world.territories.filter(item => item.ownerId === world.playerNationId).length;
+  const playerName = world.nations.find(item => item.player)?.name ?? 'Orinth';
+  return <ScreenContainer>
+    <Text style={type.title}>The living world</Text>
+    <Text style={type.subtitle}>A century of shifting borders, rival governments, trade, and war. Neighbor states act between your decisions; occupied land can be liberated.</Text>
+    <View style={styles.statRow}><StatPill label="Year" value={`${world.year} / 120`} /><StatPill label="Territories" value={`${owned} / ${world.territories.length}`} tone={owned >= 7 ? 'good' : 'neutral'} /><StatPill label="Army readiness" value={formatPercent(world.army)} tone={world.army < 3000 ? 'warning' : 'neutral'} /></View>
+    <SectionTitle aside="Relations, power, and active treaties">Foreign powers</SectionTitle>
+    {world.nations.filter(nation => !nation.player).map(nation => <Card key={nation.id}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{nation.name}</Text><Text style={type.small}>{nation.atWar ? 'AT WAR WITH ORINTH' : nation.allied ? 'MUTUAL DEFENSE ALLY' : nation.pactIds?.length ? `REGIONAL PACT · ${nation.pactIds.map(id => world.nations.find(item => item.id === id)?.name ?? id).join(', ')}` : nation.relation < -35 ? 'HOSTILE' : nation.relation > 35 ? 'FRIENDLY' : 'UNALIGNED'} · Power {formatPercent(nation.power)}</Text></View><Text style={[styles.rowValue, nation.relation < -20 ? styles.risk : styles.positive]}>{nation.relation > 0 ? '+' : ''}{nation.relation}</Text></View><Meter value={nation.power} color={nation.atWar ? colors.red : nation.allied ? colors.teal : colors.gold} /></Card>)}
+    <SectionTitle aside="Strategic resources and local resistance">Territorial control</SectionTitle>
+    {world.territories.map(land => {
+      const owner = world.nations.find(nation => nation.id === land.ownerId);
+      const isPlayer = land.ownerId === world.playerNationId;
+      return <Card key={land.id} style={isPlayer ? styles.territoryOwned : land.formerPlayerLand ? styles.territoryOccupied : undefined}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{land.name}</Text><Text style={type.small}>{owner?.name ?? 'Unknown power'} · resource: {land.resource}</Text></View><Text style={styles.rowValue}>{isPlayer ? 'ORINTH' : land.formerPlayerLand ? 'OCCUPIED' : 'FOREIGN'}</Text></View>{isPlayer ? <><Metric label="Local unrest" value={land.unrest} color={land.unrest > 5000 ? colors.red : colors.teal} />{land.resistance > 0 ? <Metric label="Resistance network" value={land.resistance} color={colors.gold} /> : null}</> : land.formerPlayerLand ? <Metric label="Liberation network" value={land.resistance} color={colors.gold} /> : null}</Card>;
+    })}
+    <SectionTitle aside={`${world.wars.length} active`}>Wars and commercial deals</SectionTitle>
+    {world.wars.map(war => {
+      const attacker = world.nations.find(nation => nation.id === war.nationId)?.name ?? 'Unknown power';
+      const rival = war.targetNationId ? world.nations.find(nation => nation.id === war.targetNationId)?.name ?? 'Unknown power' : undefined;
+      return <Card key={war.id} style={styles.warCard}><Text style={styles.eventKicker}>{rival ? 'REGIONAL WAR' : 'ACTIVE WAR'} · YEAR {war.yearsActive + 1}</Text><Text style={styles.rowTitle}>{rival ? `${attacker} vs. ${rival}` : `Orinth vs. ${attacker}`}</Text><Text style={type.small}>Casualties recorded: {numberFormat(war.casualties)} · {rival ? 'Their conflict is reshaping borders and trade.' : 'Annual treasury and morale drain continues until peace.'}</Text></Card>;
+    })}
+    {world.deals.map(deal => <Card key={deal.id}><Text style={styles.historyKind}>{deal.kind.toUpperCase()} · {deal.yearsRemaining} YEARS LEFT</Text><Text style={styles.rowTitle}>{world.nations.find(nation => nation.id === deal.nationId)?.name}</Text><Text style={type.small}>Annual revenue {formatResource(deal.annualIncome)} · breach risk {Math.round(deal.breachRisk * 100)}%</Text></Card>)}
+    {!world.wars.length && !world.deals.length ? <Card><Text style={type.small}>No active wars or commercial agreements. The world will continue to shift as time advances.</Text></Card> : null}
+    <SectionTitle aside="Recent dispatches">World news</SectionTitle>
+    {world.news.slice(0, 8).map(item => <Card key={item.id} style={item.severity === 'crisis' ? styles.newsCrisis : undefined}><Text style={styles.historyKind}>YEAR {item.year} · {item.severity.toUpperCase()}</Text><Text style={styles.rowTitle}>{item.headline}</Text><Text style={type.small}>{item.detail}</Text></Card>)}
+    <PrimaryButton label="Open foreign-affairs decisions" onPress={() => onNavigate('decisions')} tone="dark" />
+  </ScreenContainer>;
+}
+
+function numberFormat(value: number) { return new Intl.NumberFormat().format(value); }
+
 function ActionCenter({state, busy, onSubmit}: {state: GameState; busy: boolean; onSubmit: (input: ActionInput) => void}) {
   const actions = getLegalActions(state);
   const [selected, setSelected] = useState<ActionDefinition | null>(null);
   const [targetId, setTargetId] = useState<string>();
-  const targets = selected?.target === 'region' ? state.regions : selected?.target === 'faction' ? state.factions : selected?.target === 'actor' ? state.actors : selected?.target === 'institution' ? state.institutions : [];
+  const targets = selected?.target === 'region' ? state.regions : selected?.target === 'faction' ? state.factions : selected?.target === 'actor' ? state.actors : selected?.target === 'institution' ? state.institutions : selected?.target === 'nation' ? (state.world?.nations.filter(item => !item.player) ?? []) : selected?.target === 'territory' ? (state.world?.territories ?? []) : [];
+  const eligibleTargets = selected?.worldEffect ? targets.filter(target => canUseWorldAction(state, selected, target.id)) : targets;
   const choose = (action: ActionDefinition) => { setSelected(action); setTargetId(undefined); };
   return <ScreenContainer>
     <CampaignClockCard state={state} />
@@ -139,7 +190,7 @@ function ActionCenter({state, busy, onSubmit}: {state: GameState; busy: boolean;
     <Text style={type.subtitle}>{state.pendingEvent ? state.pendingEvent.narrative : 'One committed action advances the turn. Costs, beneficiaries, and delayed consequences remain part of the campaign history.'}</Text>
     <View style={styles.resourceStrip}><Text style={type.small}>Treasury <Text style={styles.inlineValue}>{formatResource(state.treasury)}</Text></Text><Text style={type.small}>Influence <Text style={styles.inlineValue}>{formatResource(state.influence)}</Text></Text></View>
     {actions.map(action => <Pressable disabled={busy} key={action.id} onPress={() => choose(action)} style={[styles.actionCard, selected?.id === action.id && styles.actionSelected]}><View style={styles.actionTop}><Text style={styles.actionCategory}>{action.category.toUpperCase()}</Text><Cost action={action} /></View><Text style={styles.actionTitle}>{action.label}</Text><Text style={type.small}>{action.description}</Text><EffectPreview state={state} action={action} /></Pressable>)}
-    {selected ? <Card style={styles.targetPanel}>{selected.target !== 'none' ? <><Text style={styles.choiceHeading}>Choose {selected.target}</Text><Text style={[type.small, styles.spaceBottom]}>The target changes who benefits and who remembers the decision.</Text><View style={styles.targetList}>{targets.map(target => <GhostButton key={target.id} label={target.name} active={targetId === target.id} onPress={() => setTargetId(target.id)} />)}</View></> : <><Text style={styles.choiceHeading}>Confirm the decision</Text><Text style={type.small}>Committing advances the campaign clock and cannot be undone.</Text></>}<View style={styles.confirmForecast}><EffectPreview state={state} action={selected} targetId={targetId} detailed /></View><View style={styles.spaceTop}><PrimaryButton disabled={(selected.target !== 'none' && !targetId) || busy} label={busy ? 'Resolving turn…' : `Commit: ${selected.label}`} onPress={() => onSubmit({id: selected.id, targetId})} /></View></Card> : null}
+    {selected ? <Card style={styles.targetPanel}>{selected.target !== 'none' ? <><Text style={styles.choiceHeading}>Choose {selected.target}</Text><Text style={[type.small, styles.spaceBottom]}>{selected.target === 'nation' ? 'Diplomatic terms depend on the current relationship and whether fighting is active.' : selected.target === 'territory' ? 'Front-line access, ownership, and resistance determine which operations are possible.' : 'The target changes who benefits and who remembers the decision.'}</Text><View style={styles.targetList}>{eligibleTargets.map(target => <GhostButton key={target.id} label={target.name} active={targetId === target.id} onPress={() => setTargetId(target.id)} />)}</View>{eligibleTargets.length === 0 ? <Text style={type.small}>No eligible targets right now. Resolve a war, improve relations, or wait for the front to change.</Text> : null}</> : <><Text style={styles.choiceHeading}>Confirm the decision</Text><Text style={type.small}>Committing advances the campaign clock and cannot be undone.</Text></>}<View style={styles.confirmForecast}><EffectPreview state={state} action={selected} targetId={targetId} detailed /></View><View style={styles.spaceTop}><PrimaryButton disabled={(selected.target !== 'none' && (!targetId || !eligibleTargets.some(target => target.id === targetId))) || busy} label={busy ? 'Resolving turn…' : `Commit: ${selected.label}`} onPress={() => onSubmit({id: selected.id, targetId})} /></View></Card> : null}
   </ScreenContainer>;
 }
 
@@ -305,7 +356,7 @@ function forecastRangeForAmount(amount: number, path: MetricChange['path']) {
 }
 function findTarget(state: GameState, targetId?: string) {
   if (!targetId) return undefined;
-  return [...state.regions, ...state.factions, ...state.actors, ...state.institutions].find(item => item.id === targetId)?.name;
+  return [...state.regions, ...state.factions, ...state.actors, ...state.institutions, ...(state.world?.nations ?? []), ...(state.world?.territories ?? [])].find(item => item.id === targetId)?.name;
 }
 function timingFromKind(kind: HistoricalRecord['kind']): ImpactTiming {
   return kind === 'decision' ? 'immediate' : kind === 'opponent' ? 'opponent' : kind === 'event' ? 'event' : kind === 'result' ? 'result' : 'systemic';
@@ -318,6 +369,7 @@ const styles = StyleSheet.create({
   flex: {flex: 1}, autosave: {flexDirection: 'row', alignItems: 'center', gap: 4}, autosaveDot: {width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teal}, autosaveText: {fontSize: 8, fontWeight: '900', color: colors.muted, letterSpacing: 0.8},
   nav: {backgroundColor: colors.navy, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, flexDirection: 'row'}, navItem: {flex: 1, alignItems: 'center', justifyContent: 'center'}, navIcon: {color: colors.darkMuted, fontSize: 18, fontWeight: '800'}, navLabel: {color: colors.darkMuted, fontSize: 9, fontWeight: '800', marginTop: 4}, navActive: {color: colors.gold},
   eventBanner: {backgroundColor: '#2A2430', borderRadius: radius.md, borderWidth: 1, borderColor: '#7A5C57', padding: spacing.md, flexDirection: 'row', justifyContent: 'space-between'}, eventKicker: {color: colors.red, fontSize: 9, letterSpacing: 1.3, fontWeight: '900'}, eventTitle: {color: colors.text, fontSize: 18, fontWeight: '900', marginVertical: 4}, eventText: {color: colors.muted, fontSize: 12, lineHeight: 17, maxWidth: 290}, chevron: {color: colors.gold, fontSize: 28, alignSelf: 'center'},
+  territoryOwned: {borderColor: '#397b6b', backgroundColor: '#112c32'}, territoryOccupied: {borderColor: '#a34b4b', backgroundColor: '#321f28'}, warCard: {borderColor: '#a34b4b', backgroundColor: '#321f28'}, newsCrisis: {borderLeftWidth: 3, borderLeftColor: colors.red},
   statRow: {flexDirection: 'row', gap: spacing.sm}, projectionCard: {gap: spacing.md}, projectionRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md}, projection: {color: colors.text, fontSize: 34, fontWeight: '900', marginTop: 3}, projectionTarget: {color: colors.muted, fontSize: 18}, raceBadge: {paddingVertical: 5, paddingHorizontal: 9, backgroundColor: '#173B3B', borderRadius: radius.pill}, raceBadgeText: {color: colors.teal, fontSize: 9, fontWeight: '900', letterSpacing: 0.8},
   listRow: {minHeight: 72, backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.md, flexDirection: 'row', alignItems: 'center'}, regionBadge: {width: 40, height: 40, borderRadius: 12, backgroundColor: '#243B4A', alignItems: 'center', justifyContent: 'center', marginRight: spacing.md}, regionBadgeText: {color: colors.gold, fontWeight: '900'}, rowCopy: {flex: 1}, rowTitle: {color: colors.text, fontSize: 15, fontWeight: '800', marginBottom: 3}, rowValue: {color: colors.goldSoft, fontSize: 17, fontWeight: '900'}, alignRight: {alignItems: 'flex-end'}, historyKind: {color: colors.gold, fontSize: 9, fontWeight: '900', letterSpacing: 1.1, marginBottom: 5},
   resourceStrip: {flexDirection: 'row', gap: spacing.lg}, inlineValue: {color: colors.goldSoft, fontWeight: '900'}, actionCard: {backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.md}, actionSelected: {borderColor: colors.gold, backgroundColor: '#183142'}, actionTop: {flexDirection: 'row', justifyContent: 'space-between'}, actionCategory: {color: colors.teal, fontSize: 9, fontWeight: '900', letterSpacing: 1.2}, cost: {color: colors.goldSoft, fontSize: 9, fontWeight: '800'}, actionTitle: {color: colors.text, fontSize: 18, fontWeight: '900', marginVertical: 7}, effectRow: {marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}, effectText: {color: colors.teal, fontSize: 10, fontWeight: '800'}, delayed: {color: colors.blue, fontSize: 8, fontWeight: '900'}, targetPanel: {borderColor: colors.gold}, choiceHeading: {color: colors.text, fontSize: 18, fontWeight: '900'}, targetList: {flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm}, spaceBottom: {marginBottom: spacing.md}, spaceTop: {marginTop: spacing.md},

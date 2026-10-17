@@ -6,8 +6,9 @@ import {
   GameState, GameplayExperience, HistoricalRecord, ImpactTiming, MetricChange, MetricImpact,
   PoliticalEvent, TurnReport, TurnResult,
 } from './types';
+import {advanceWorld, applyWorldAction, canUseWorldAction} from './world';
 
-export const ENGINE_VERSION = '1.0.0';
+export const ENGINE_VERSION = '1.1.0';
 export const BASELINE_POLICY_VERSION = 'rules-1.0.0';
 
 export class SimulationError extends Error {
@@ -66,15 +67,18 @@ export function getLegalActions(state: GameState): ActionDefinition[] {
       description: eventChoice.description,
       category: 'policy',
       cost: {},
-      target: 'none',
       effects: eventChoice.effects,
       delayedEffects: eventChoice.delayedEffects,
+      worldEffect: eventChoice.worldEffect,
+      target: eventChoice.target ?? 'none',
     }));
   }
   return getActions(state.mode).filter(action => {
     if ((action.minimumTurn ?? 0) > state.turn) return false;
     if (action.once && state.actionHistory.some(previous => previous.id === action.id)) return false;
-    return Object.entries(action.cost).every(([key, amount]) => state[key as 'treasury' | 'influence' | 'legitimacy'] >= (amount ?? 0));
+    const candidates = action.target === 'nation' ? (state.world?.nations.filter(item => !item.player) ?? []) : action.target === 'territory' ? (state.world?.territories ?? []) : [];
+    const worldAvailable = candidates.length ? candidates.some(target => canUseWorldAction(state, action, target.id)) : canUseWorldAction(state, action);
+    return worldAvailable && Object.entries(action.cost).every(([key, amount]) => state[key as 'treasury' | 'influence' | 'legitimacy'] >= (amount ?? 0));
   });
 }
 
@@ -85,10 +89,11 @@ export function validateAction(state: GameState, input: ActionInput): ActionDefi
     const exists = state.pendingEvent ? input.id.startsWith('event:') : getActions(state.mode).some(item => item.id === input.id);
     throw new SimulationError(exists ? 'ILLEGAL_ACTION' : 'UNKNOWN_ACTION', exists ? 'That action is not currently available.' : 'Unknown action.');
   }
-  const targets = action.target === 'region' ? state.regions : action.target === 'faction' ? state.factions : action.target === 'actor' ? state.actors : action.target === 'institution' ? state.institutions : [];
+  const targets = action.target === 'region' ? state.regions : action.target === 'faction' ? state.factions : action.target === 'actor' ? state.actors : action.target === 'institution' ? state.institutions : action.target === 'nation' ? (state.world?.nations.filter(item => !item.player) ?? []) : action.target === 'territory' ? (state.world?.territories ?? []) : [];
   if (action.target !== 'none' && !targets.some(target => target.id === input.targetId)) {
     throw new SimulationError('INVALID_TARGET', `Choose a valid ${action.target}.`);
   }
+  if (!canUseWorldAction(state, action, input.targetId)) throw new SimulationError('ILLEGAL_ACTION', 'The world conditions for this action are no longer met.');
   for (const [key, amount] of Object.entries(action.cost)) {
     if (state[key as 'treasury' | 'influence' | 'legitimacy'] < (amount ?? 0)) {
       throw new SimulationError('INSUFFICIENT_RESOURCE', `Not enough ${key}.`);
@@ -141,6 +146,8 @@ export function processTurn(current: GameState, input: ActionInput, aiDirective?
     state[resource] = Math.max(0, beforeCost - (amount ?? 0));
   }
   applyChanges(state, action.effects, input.targetId);
+  const worldActionNews = applyWorldAction(state, action.worldEffect, input.targetId);
+  for (const item of worldActionNews) records.push(record(state, 'system', item.headline, item.detail, {resolutionId, timing: 'systemic'}));
   if (input.id === 'advertise' || input.id === 'rally' || input.id === 'invest-region') {
     const region = state.regions.find(item => item.id === input.targetId);
     if (region) region.investment += input.id === 'advertise' ? 700 : input.id === 'rally' ? 450 : 750;
@@ -186,6 +193,8 @@ export function processTurn(current: GameState, input: ActionInput, aiDirective?
   }
   state.turn += 1;
   resolveScheduledEffects(state, records, resolutionId);
+  const worldNews = advanceWorld(state);
+  for (const item of worldNews) records.push(record(state, item.severity === 'crisis' ? 'event' : 'system', item.headline, item.detail, {resolutionId, timing: item.severity === 'crisis' ? 'event' : 'systemic'}));
   ageCharactersIfNeeded(state);
   maybeCreateEvent(state, records, resolutionId);
   evaluateCampaign(state, records, resolutionId);
@@ -243,9 +252,9 @@ export function processTurn(current: GameState, input: ActionInput, aiDirective?
 
   const rewardSignals = calculateReward(current, state);
   const experience: GameplayExperience = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     gameMode: state.mode,
-    engineVersion: state.engineVersion,
+    engineVersion: ENGINE_VERSION,
     policyVersion: state.policyVersion,
     gameId: state.id,
     turnNumber: previousTurn,
@@ -307,7 +316,10 @@ function applyChanges(state: GameState, changes: MetricChange[], suppliedTarget?
 
 function resolveOpponent(state: GameState, records: HistoricalRecord[], directive?: number): ActionInput {
   const difficultyBoost = state.difficulty === 'standard' ? 0 : state.difficulty === 'veteran' ? 90 : 170;
-  if (directive !== undefined && directive >= 0 && directive <= 7) return resolvePolicyDirective(state, records, directive, difficultyBoost);
+  if (state.mode === 'grand_campaign' && directive !== undefined && directive >= 8 && directive <= 15) {
+    return resolveWorldPolicyDirective(state, records, directive - 8);
+  }
+  if (state.mode !== 'grand_campaign' && directive !== undefined && directive >= 0 && directive <= 7) return resolvePolicyDirective(state, records, directive, difficultyBoost);
   if (state.mode === 'presidential') {
     const target = [...state.regions].sort((a, b) => Math.abs(a.support - 5000) - Math.abs(b.support - 5000) || b.electoralVotes! - a.electoralVotes!)[0];
     const sample = randomBetween(state.randomState, 180, 320 + difficultyBoost);
@@ -325,6 +337,102 @@ function resolveOpponent(state: GameState, records: HistoricalRecord[], directiv
   state.influence = Math.max(0, state.influence - Math.round(sample.value / 4));
   records.push(record(state, 'opponent', `${hostile.name} applies pressure`, `A rival bloc exploits unresolved tensions. Its support falls while internal discipline hardens.`));
   return {id: 'ai-pressure-faction', targetId: hostile.id};
+}
+
+function resolveWorldPolicyDirective(state: GameState, records: HistoricalRecord[], action: number): ActionInput {
+  const world = state.world;
+  if (!world) return {id: 'rl:world-unavailable'};
+  const rivals = world.nations.filter(item => !item.player);
+  const neighbors = (nationId: string) => world.territories.some(land => land.ownerId === nationId && land.neighbors.some(id => world.territories.some(border => border.id === id && border.ownerId === world.playerNationId)));
+  const publish = (headline: string, detail: string, severity: 'brief' | 'pressure' | 'crisis' = 'pressure') => {
+    const item = {id: stableId('rl-world-news', state.seed, state.turn * 29 + world.news.length), year: world.year, headline, detail, severity};
+    world.news.unshift(item); world.news = world.news.slice(0, 30);
+    records.push(record(state, severity === 'crisis' ? 'event' : 'opponent', headline, detail, {timing: severity === 'crisis' ? 'event' : 'opponent'}));
+  };
+  const target = [...rivals].sort((a, b) => b.aggression + b.power / 10 - (a.aggression + a.power / 10))[0];
+  const activeWar = world.wars.find(item => !item.targetNationId);
+  if (action === 0 || action === 1) {
+    if (world.deals.length) {
+      const deal = [...world.deals].sort((a, b) => b.annualIncome - a.annualIncome)[0];
+      world.deals = world.deals.filter(item => item.id !== deal.id);
+      state.economy.growth = clamp(state.economy.growth - (action === 0 ? 160 : 240));
+      state.treasury = Math.max(0, state.treasury - Math.round(deal.annualIncome * (action === 0 ? 0.5 : 0.8)));
+      publish(action === 0 ? 'Trade routes face a coordinated embargo' : 'A cross-border consortium collapses', action === 0 ? 'A rival power blocks commercial access and cuts Orinthian revenue.' : 'Foreign partners withdraw from an industrial contract, exposing Orinthian supply chains.');
+    } else {
+      if (target) target.relation = Math.max(-100, target.relation - (action === 0 ? 12 : 8));
+      state.economy.growth = clamp(state.economy.growth - 120);
+      publish('Commercial pressure builds', 'Rival capitals redirect trade and investment away from Orinth, threatening future income.');
+    }
+  } else if (action === 2) {
+    const pair = rivals.filter(item => item.id !== target?.id && !item.allied && !target?.pactIds?.includes(item.id)).sort((a, b) => b.power - a.power)[0];
+    if (target && pair) {
+      target.pactIds = [...new Set([...(target.pactIds ?? []), pair.id])];
+      pair.pactIds = [...new Set([...(pair.pactIds ?? []), target.id])];
+      target.relation = Math.max(-100, target.relation - 10);
+      publish('Rival powers sign a defense pact', `${target.name} and ${pair.name} coordinate their forces. Their compact shifts the balance against Orinth.`, 'crisis');
+    } else {
+      state.influence = Math.max(0, state.influence - 180);
+      publish('Diplomatic isolation campaign', 'Foreign envoys coordinate a public campaign questioning Orinth’s reliability.');
+    }
+  } else if (action === 3) {
+    const aggressor = rivals.filter(item => !item.atWar && !item.allied && neighbors(item.id)).sort((a, b) => b.aggression - a.aggression)[0];
+    if (aggressor) {
+      aggressor.atWar = true; aggressor.relation = Math.max(-100, aggressor.relation - 28);
+      world.wars.push({id: stableId('rl-war', state.seed, state.turn), nationId: aggressor.id, yearsActive: 0, casualties: 0});
+      publish(`${aggressor.name} declares war on Orinth`, 'Enemy forces cross the frontier. Mobilize, seek allies, organize resistance, or pursue a ceasefire.', 'crisis');
+    } else {
+      if (target) target.power = Math.min(10000, target.power + 650);
+      publish('Border ultimatum issued', 'A rival government escalates its claims and begins preparing forces near Orinth’s borders.', 'crisis');
+    }
+  } else if (action === 4) {
+    const warNation = activeWar ? world.nations.find(item => item.id === activeWar.nationId) : undefined;
+    if (activeWar) {
+      world.wars = world.wars.filter(item => item.id !== activeWar.id);
+      if (warNation) { warNation.atWar = false; warNation.relation = Math.min(100, warNation.relation + 14); }
+      publish('Rival offers a conditional ceasefire', `${warNation?.name ?? 'The enemy'} pauses its offensive after mounting losses. The ceasefire creates a narrow window to rebuild.`, 'brief');
+    } else {
+      if (target) target.relation = Math.max(-100, target.relation - 8);
+      publish('Peace initiative rejected', 'A rival power rejects mediation and hardens its position on disputed borders.', 'crisis');
+    }
+  } else if (action === 5) {
+    if (target) target.power = Math.min(10000, target.power + 900);
+    state.publicSentiment = Math.max(0, state.publicSentiment - 80);
+    publish('Foreign armies mobilize', `${target?.name ?? 'Rival powers'} expands its readiness. Orinth faces a growing military imbalance.`);
+  } else if (action === 6) {
+    if (activeWar) {
+      const nation = world.nations.find(item => item.id === activeWar.nationId);
+      const frontier = world.territories.filter(land => land.ownerId === world.playerNationId && land.neighbors.some(id => world.territories.some(border => border.id === id && border.ownerId === nation?.id)));
+      if (nation && frontier.length) {
+        const draw = randomBetween(state.randomState, 0, 10000); state.randomState = draw.state;
+        const success = draw.value < Math.max(2200, Math.min(7600, 5000 + (nation.power - world.army) / 3));
+        if (success) {
+          const land = frontier[Math.floor(draw.value * frontier.length) % frontier.length];
+          land.ownerId = nation.id; land.formerPlayerLand = true; land.unrest = 6500;
+          world.army = Math.max(0, world.army - 520); state.legitimacy = Math.max(0, state.legitimacy - 250);
+          publish(`${land.name} falls to enemy forces`, `${nation.name} captures ${land.name}. Occupation and resistance now shape the front.`, 'crisis');
+        } else publish('Enemy offensive stalls', `${nation.name} fails to break Orinthian lines, but the war continues.`, 'crisis');
+      } else publish('Enemy offensive blocked', 'Orinth’s forces hold the current line; the rival will seek another opening.');
+    } else {
+      if (target) target.power = Math.min(10000, target.power + 500);
+      publish('Frontier forces concentrate', 'A rival army massed near the border raises the risk of a sudden offensive.', 'crisis');
+    }
+  } else {
+    const occupied = world.territories.filter(item => item.ownerId !== world.playerNationId && item.formerPlayerLand).sort((a, b) => b.resistance - a.resistance)[0];
+    if (occupied) {
+      occupied.unrest = Math.min(10000, occupied.unrest + 500);
+      occupied.resistance = Math.max(0, occupied.resistance - 850);
+      publish(`Occupation hardens in ${occupied.name}`, 'Enemy authorities intensify patrols and disrupt the underground. Resistance loses ground as occupation becomes more entrenched.', 'crisis');
+    } else {
+    const unsettled = world.territories.filter(item => item.ownerId === world.playerNationId).sort((a, b) => b.unrest - a.unrest)[0];
+    if (unsettled) {
+      unsettled.unrest = Math.min(10000, unsettled.unrest + 1050);
+      unsettled.resistance = Math.min(10000, unsettled.resistance + 500);
+      state.legitimacy = Math.max(0, state.legitimacy - 120);
+      publish(`Foreign-backed unrest in ${unsettled.name}`, 'Outside actors funnel support to local hardliners, increasing unrest and weakening civil authority.', 'crisis');
+    } else publish('Resistance networks intensify', 'Underground groups coordinate across occupied territory and challenge Orinth’s control.', 'crisis');
+    }
+  }
+  return {id: `rl:world-${['trade', 'business', 'alliance', 'war', 'peace', 'mobilization', 'offensive', 'resistance'][action]}`};
 }
 
 function resolvePolicyDirective(state: GameState, records: HistoricalRecord[], directive: number, difficultyBoost: number): ActionInput {
@@ -386,7 +494,8 @@ function resolveScheduledEffects(state: GameState, records: HistoricalRecord[], 
 }
 
 function maybeCreateEvent(state: GameState, records: HistoricalRecord[], resolutionId: string) {
-  if (state.pendingEvent || state.status !== 'active' || state.turn % 3 !== 0) return;
+  const interval = state.mode === 'grand_campaign' ? 2 : 3;
+  if (state.pendingEvent || state.status !== 'active' || state.turn % interval !== 0) return;
   const templates = eventTemplates(state.mode).filter(event => !state.seenEvents.includes(event.templateId));
   if (!templates.length) return;
   const draw = nextRandom(state.randomState);
@@ -438,6 +547,28 @@ function eventTemplates(mode: GameMode): Array<Omit<PoliticalEvent, 'id'>> {
       choice('private-accord', 'Negotiate a private accord', 'Buy time, while empowering the great houses.', [{path: 'influence', amount: -400}, {path: 'faction.support', targetId: 'nobles', amount: 420}, {path: 'legitimacy', amount: -140}]),
     ],
   }];
+  if (mode === 'grand_campaign') return [...shared, {
+    templateId: 'world-border-crisis', title: 'Border crisis: the North March', severity: 'crisis',
+    narrative: 'A patrol clash on the northern frontier has left soldiers dead. The Karsic court denies involvement; the Defense Directorate demands a response before the rival can set the terms.',
+    choices: [
+      choice('international-inquiry', 'Demand an international inquiry', 'Protect legitimacy and seek evidence, but appear cautious to the General Staff.', [{path: 'legitimacy', amount: 280}, {path: 'influence', amount: -260}, {path: 'momentum', amount: -160}]),
+      choice('forward-deployment', 'Deploy forces to the frontier', 'Deter another incursion and reassure the army, at a steep treasury cost.', [{path: 'treasury', amount: -650}, {path: 'momentum', amount: 240}, {path: 'publicSentiment', amount: -120}]),
+    ],
+  }, {
+    templateId: 'world-trade-pressure', title: 'The port consortium demands terms', severity: 'pressure',
+    narrative: 'A powerful group of exporters offers to finance port expansion in exchange for long-term tax privileges. Refusal risks a capital strike; acceptance may bind future governments.',
+    choices: [
+      choice('transparent-charter', 'Publish a limited public charter', 'Accept investment under independent audit and keep a smaller public share.', [{path: 'treasury', amount: 420}, {path: 'legitimacy', amount: 220}, {path: 'faction.support', targetId: 'merchants', amount: 160}]),
+      choice('reject-concessions', 'Reject the private concessions', 'Keep control of the ports and absorb the immediate investment loss.', [{path: 'legitimacy', amount: 180}, {path: 'economy.growth', amount: -220}, {path: 'faction.cohesion', targetId: 'merchants', amount: -260}]),
+    ],
+  }, {
+    templateId: 'world-war-fatigue', title: 'War weariness reaches the capital', severity: 'crisis',
+    narrative: 'Casualty lists and ration prices dominate the news. The opposition calls the campaign open-ended; military advisers say a pause could let the enemy regroup.',
+    choices: [
+      choice('war-cabinet', 'Form a cross-party war cabinet', 'Share scrutiny and costs while improving public confidence.', [{path: 'influence', amount: -360}, {path: 'legitimacy', amount: 260}, {path: 'publicSentiment', amount: 170}]),
+      choice('national-mobilization', 'Call for national mobilization', 'Raise short-term resolve but spend reserves and deepen domestic strain.', [{path: 'treasury', amount: -620}, {path: 'momentum', amount: 320}, {path: 'publicSentiment', amount: -260}]),
+    ],
+  }];
   return [...shared, {
     templateId: 'recognition', title: 'Recognition question', severity: 'pressure',
     narrative: 'Neighboring governments ask for a credible timeline and institutional guarantees.',
@@ -455,6 +586,20 @@ function choice(id: string, label: string, description: string, effects: MetricC
 function evaluateCampaign(state: GameState, records: HistoricalRecord[], resolutionId: string) {
   const avgFaction = average(state.factions.map(item => item.support));
   const avgInstitution = average(state.institutions.map(item => item.confidence));
+  if (state.mode === 'grand_campaign') {
+    if (state.legitimacy < 350 && state.publicSentiment < 350 && state.treasury < 150) {
+      finish(state, 'defeat', 'The Republic fractures', 'Civil authority, public confidence, and the treasury have all failed. The world continues without Orinthian leadership.', records, resolutionId);
+      return;
+    }
+    if (state.turn <= state.maxTurns) return;
+    const world = state.world;
+    const holdings = world?.territories.filter(item => item.ownerId === world.playerNationId).length ?? 0;
+    const allies = world?.nations.filter(item => item.allied).length ?? 0;
+    if (holdings >= 7) finish(state, 'victory', 'The Orinthian sphere', `After a century of struggle, Orinth controls ${holdings} territories and shapes the balance of power across the continent.`, records, resolutionId);
+    else if (holdings >= 5 && allies >= 2 && state.economy.growth >= 4200 && state.legitimacy >= 4200) finish(state, 'transitioned', 'A durable continental order', 'Orinth ends the century secure at home, prosperous, and bound to two allies by institutions rather than conquest.', records, resolutionId);
+    else finish(state, 'defeat', 'The century closes in retreat', `Orinth holds ${holdings} territories and ${allies} formal allies. Rival powers have set the continental order; the republic survives only at their sufferance.`, records, resolutionId);
+    return;
+  }
   if (state.legitimacy < 900 || state.publicSentiment < 900 || avgFaction < 800) {
     finish(state, 'defeat', 'Political collapse', 'The governing coalition no longer commands enough legitimacy or organized support to continue.', records, resolutionId);
     return;
@@ -677,7 +822,7 @@ function timingForKind(kind: HistoricalRecord['kind']): ImpactTiming {
 
 function findTargetName(state: GameState, targetId?: string) {
   if (!targetId) return undefined;
-  return [...state.regions, ...state.factions, ...state.actors, ...state.institutions].find(item => item.id === targetId)?.name;
+  return [...state.regions, ...state.factions, ...state.actors, ...state.institutions, ...(state.world?.nations ?? []), ...(state.world?.territories ?? [])].find(item => item.id === targetId)?.name;
 }
 
 function phaseFor(mode: GameMode, turn: number, maxTurns: number) {
@@ -685,10 +830,24 @@ function phaseFor(mode: GameMode, turn: number, maxTurns: number) {
   if (mode === 'presidential') return ratio < 0.35 ? 'Building the map' : ratio < 0.7 ? 'National campaign' : 'Final sprint';
   if (mode === 'dictatorship') return ratio < 0.35 ? 'Consolidation' : ratio < 0.7 ? 'Pressure and reform' : 'Political settlement';
   if (mode === 'monarchy') return ratio < 0.35 ? 'Stewardship' : ratio < 0.7 ? 'Court realignment' : 'Succession season';
+  if (mode === 'grand_campaign') return ratio < 0.3 ? 'Founding the republic' : ratio < 0.65 ? 'Rival powers rise' : ratio < 0.9 ? 'The continental struggle' : 'A century’s reckoning';
   return ratio < 0.35 ? 'Coalition building' : ratio < 0.7 ? 'Authority contest' : 'Interim government';
 }
 
 export function extractFeatures(state: GameState): number[] {
+  const world = state.world;
+  const territories = world?.territories ?? [];
+  const occupied = territories.filter(item => item.formerPlayerLand);
+  const worldFeatures = world ? [
+    territories.filter(item => item.ownerId === world.playerNationId).length / Math.max(1, territories.length),
+    world.army / 10000,
+    (world.nations.filter(item => !item.player).reduce((sum, item) => sum + item.relation, 0) / Math.max(1, world.nations.filter(item => !item.player).length) + 100) / 200,
+    Math.min(1, world.wars.filter(item => !item.targetNationId).length / 5),
+    world.nations.filter(item => !item.player && item.allied).length / 5,
+    Math.min(1, world.deals.reduce((sum, item) => sum + item.annualIncome, 0) / 5000),
+    occupied.length / Math.max(1, territories.length),
+    occupied.length ? occupied.reduce((sum, item) => sum + item.resistance, 0) / occupied.length / 10000 : 0,
+  ] : Array(8).fill(0);
   return [
     state.turn / state.maxTurns, state.treasury / 10000, state.influence / 10000,
     state.legitimacy / 10000, state.publicSentiment / 10000, state.momentum / 10000,
@@ -698,14 +857,23 @@ export function extractFeatures(state: GameState): number[] {
     average(state.factions.map(item => item.cohesion)) / 10000,
     average(state.institutions.map(item => item.confidence)) / 10000,
     average(state.regions.map(item => item.support)) / 10000,
+    ...worldFeatures,
   ].map(value => Number(value.toFixed(6)));
 }
 
 function calculateReward(before: GameState, after: GameState) {
   const political = (after.legitimacy - before.legitimacy + after.publicSentiment - before.publicSentiment + after.momentum - before.momentum) / 3000;
   const economic = (after.economy.growth - before.economy.growth + after.economy.employment - before.economy.employment - (after.economy.inflation - before.economy.inflation)) / 3000;
+  const beforeWorld = extractFeatures(before).slice(16);
+  const afterWorld = extractFeatures(after).slice(16);
+  const world = before.world && after.world
+    ? afterWorld.reduce((sum, value, index) => sum + (value - beforeWorld[index]) * [0.30, 0.10, 0.10, -0.08, 0.12, 0.12, -0.22, 0.08][index], 0) * 4
+    : 0;
   const terminal = after.status === 'victory' || after.status === 'transitioned' ? 1 : after.status === 'defeat' ? -1 : 0;
-  return {political: roundReward(political), economic: roundReward(economic), terminal, total: roundReward(political * 0.65 + economic * 0.35 + terminal)};
+  const total = before.world && after.world
+    ? political * 0.2 + economic * 0.2 + world * 0.6 + terminal
+    : political * 0.65 + economic * 0.35 + terminal;
+  return {political: roundReward(political), economic: roundReward(economic), world: roundReward(world), terminal, total: roundReward(total)};
 }
 
 function deterministicTimestamp(createdAt: string, turn: number) {
