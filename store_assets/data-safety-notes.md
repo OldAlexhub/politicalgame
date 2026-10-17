@@ -17,7 +17,7 @@ With separate opt-in, game state/action transitions and outcomes are uploaded. T
 ## Data handling
 
 - Encrypted in transit: yes in production; configure HTTPS before release.
-- Deletion: local deletion plus a token-linked server deletion endpoint exists.
+- Deletion: no in-app deletion action or public token-linked deletion endpoint; verified requests required by applicable law are handled through the published support contact.
 - Account deletion: ordinary users have no account.
 - Ephemeral processing: no; accepted records may be retained for batch training under the published period.
 - Required versus optional: advertising processing depends on consent/legal mode; gameplay analytics and learning are optional.

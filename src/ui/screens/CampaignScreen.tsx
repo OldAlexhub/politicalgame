@@ -3,6 +3,7 @@ import {Alert, Animated, BackHandler, Pressable, StyleSheet, Text, Vibration, Vi
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ActionDefinition, ActionInput, AppSettings, GameState, HistoricalRecord, ImpactTiming, MetricChange, MetricImpact, TurnReport} from '../../game/types';
 import {getCampaignClock, formatCampaignMoment} from '../../game/campaignClock';
+import {latestTreasuryImpacts, projectTreasury} from '../../game/economy';
 import {concedeCampaign, forecastAction, getLegalActions, processTurn, SimulationError} from '../../game/engine';
 import {campaignHealth, closestRegions, formatPercent, formatResource, projectedElectoralVotes} from '../../game/selectors';
 import {MODE_COPY} from '../../game/scenarios';
@@ -11,7 +12,7 @@ import {saveCampaign, unlockAchievements} from '../../services/storage';
 import {flushAnalytics, flushExperiences, queueAnalytics, queueExperience} from '../../services/telemetry';
 import {advertising} from '../../services/ads';
 import {modelPolicy} from '../../services/modelPolicy';
-import {playWorldCue, setWorldAmbience} from '../../services/worldAudio';
+import {playWorldCue} from '../../services/worldAudio';
 import {colors, radius, spacing} from '../theme';
 import {Card, GhostButton, Meter, PrimaryButton, ScreenContainer, SectionTitle, StatPill, TopBar, type} from '../components/Layout';
 import {RegionalGrid, StrategicMap} from '../components/StrategicMap';
@@ -29,10 +30,6 @@ export function CampaignScreen({state, settings, onChange, onExit}: {state: Game
     if (state.status !== 'active') await advertising.showAtNaturalTransition();
     onExit();
   }, [onExit, state.status]);
-  useEffect(() => {
-    setWorldAmbience(settings.sound && state.mode === 'grand_campaign');
-    return () => setWorldAmbience(false);
-  }, [settings.sound, state.mode]);
   const acknowledgeReport = useCallback(async (naturalTransition: boolean) => {
     if (acknowledgingRef.current) return;
     const report = state.lastTurnReport;
@@ -79,7 +76,7 @@ export function CampaignScreen({state, settings, onChange, onExit}: {state: Game
       const breakingNews = turn.state.world?.news.find(item => item.severity !== 'brief' && !state.world?.news.some(previous => previous.id === item.id));
       const breakingEvent = turn.report.event;
       if (breakingEvent) {
-        if (turn.state.mode === 'grand_campaign') playWorldCue('breaking_news.wav', settings.sound);
+        playWorldCue('breaking_news.wav', settings.sound);
         Alert.alert(`BREAKING NEWS · ${breakingEvent.severity.toUpperCase()}`, `${breakingEvent.title}\n\n${breakingEvent.narrative}`, [{text: 'Read the turn briefing'}]);
       } else if (breakingNews) {
         const conflict = /war|front|occup|uprising|assault|invasion|clash/i.test(breakingNews.headline);
@@ -124,12 +121,14 @@ function Dashboard({state, onNavigate}: {state: GameState; onNavigate: (view: Ca
   const latest = [...state.history].reverse().slice(0, 3);
   const health = campaignHealth(state);
   const report = state.lastTurnReport;
+  const fiscal = projectTreasury(state);
   const drivers = report ? report.sections.flatMap(section => section.impacts.map(impact => ({...impact, source: section.title}))).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).slice(0, 3) : [];
   return <ScreenContainer>
     <CampaignClockCard state={state} />
     {state.pendingEvent ? <Pressable onPress={() => onNavigate('decisions')} style={styles.eventBanner}><View><Text style={styles.eventKicker}>{state.pendingEvent.severity.toUpperCase()}</Text><Text style={styles.eventTitle}>{state.pendingEvent.title}</Text><Text numberOfLines={2} style={styles.eventText}>{state.pendingEvent.narrative}</Text></View><Text style={styles.chevron}>›</Text></Pressable> : null}
     {state.world?.news[0] ? <Pressable onPress={() => onNavigate('map')} style={[styles.eventBanner, state.world.news[0].severity === 'crisis' && styles.newsCrisis]}><View><Text style={styles.eventKicker}>WORLD DISPATCH · YEAR {state.world.news[0].year}</Text><Text style={styles.eventTitle}>{state.world.news[0].headline}</Text><Text numberOfLines={2} style={styles.eventText}>{state.world.news[0].detail}</Text></View><Text style={styles.chevron}>›</Text></Pressable> : null}
     <View style={styles.statRow}><StatPill label="Legitimacy" value={formatPercent(state.legitimacy)} tone={state.legitimacy >= 5200 ? 'good' : 'warning'} /><StatPill label="Treasury" value={formatResource(state.treasury)} /><StatPill label="Momentum" value={formatPercent(state.momentum)} /></View>
+    <Pressable accessibilityRole="button" onPress={() => onNavigate('finance')} style={[styles.fiscalCard, (fiscal.outlook === 'deficit' || state.treasury < 1200) && styles.fiscalDeficit]}><View style={styles.projectionRow}><View style={styles.rowCopy}><Text style={type.label}>NEXT-PERIOD FISCAL OUTLOOK</Text><Text style={styles.rowTitle}>{state.treasury < 1200 ? 'Treasury emergency' : fiscal.outlook === 'surplus' ? 'Operating surplus' : fiscal.outlook === 'deficit' ? 'Deficit pressure' : 'Budget near balance'}</Text><Text style={type.small}>{state.treasury < 1200 ? 'Reserve exhaustion is damaging prices, employment, legitimacy, and state capacity.' : `${fiscal.revenues.length} revenue source${fiscal.revenues.length === 1 ? '' : 's'} · ${fiscal.expenses.length} committed cost${fiscal.expenses.length === 1 ? '' : 's'} · tap for the ledger`}</Text></View><Text style={[styles.fiscalNet, fiscal.net >= 0 ? styles.positive : styles.negative]}>{fiscal.net >= 0 ? '+' : '-'}{formatResource(Math.abs(fiscal.net))}</Text></View></Pressable>
     {state.mode === 'presidential' ? <Card style={styles.projectionCard}><View style={styles.projectionRow}><View><Text style={type.label}>ELECTORAL PROJECTION</Text><Text style={styles.projection}>{projectedElectoralVotes(state)}<Text style={styles.projectionTarget}> / 270</Text></Text></View><View style={styles.raceBadge}><Text style={styles.raceBadgeText}>{projectedElectoralVotes(state) >= 270 ? 'LEADING' : 'PATH OPEN'}</Text></View></View><Meter value={Math.min(10000, projectedElectoralVotes(state) / 270 * 10000)} /></Card> : <Card style={styles.projectionCard}><Text style={type.label}>COALITION HEALTH</Text><Text style={styles.projection}>{formatPercent(health)}</Text><Meter value={health} color={health >= 5000 ? colors.teal : colors.red} /></Card>}
     {report ? <Card style={styles.recapCard}><View style={styles.projectionRow}><View><Text style={type.label}>SINCE {report.timeLabel.toUpperCase()}</Text><Text style={styles.rowTitle}>{report.actionLabel}{report.targetName ? ` · ${report.targetName}` : ''}</Text></View><Text style={[styles.recapMomentum, report.momentum.delta >= 0 ? styles.positive : styles.negative]}>{signedPoints(report.momentum.delta)} momentum</Text></View>{drivers.map(driver => <ImpactLine key={`${driver.path}-${driver.targetId ?? ''}-${driver.source}`} state={state} impact={driver} compact source={driver.source} />)}{state.scheduledEffects.length ? <Pressable onPress={() => onNavigate('history')}><Text style={styles.pendingLink}>{state.scheduledEffects.length} pending consequence{state.scheduledEffects.length === 1 ? '' : 's'} · view timeline</Text></Pressable> : null}</Card> : null}
     <SectionTitle aside="Most competitive">Strategic pressure</SectionTitle>
@@ -147,24 +146,27 @@ function MapView({state}: {state: GameState}) {
 function WorldMapView({state, onNavigate}: {state: GameState; onNavigate: (view: CampaignView) => void}) {
   const world = state.world;
   if (!world) return <ScreenContainer><Text style={type.title}>World record unavailable</Text></ScreenContainer>;
+  const sovereign = world.nations.find(item => item.id === world.playerNationId)?.name ?? 'Your country';
   const owned = world.territories.filter(item => item.ownerId === world.playerNationId).length;
   return <ScreenContainer>
-    <Text style={type.title}>The living world</Text>
-    <Text style={type.subtitle}>A century of shifting borders, rival governments, trade, and war. Neighbor states act between your decisions; occupied land can be liberated.</Text>
+    <Text style={type.title}>{sovereign} in the living world</Text>
+    <Text style={type.subtitle}>An alternate century of shifting borders, rival governments, trade, and war. Country names and broad resource profiles are real; future events, alignments, conflicts, and outcomes are fictional.</Text>
     <View style={styles.statRow}><StatPill label="Year" value={`${world.year} / 120`} /><StatPill label="Territories" value={`${owned} / ${world.territories.length}`} tone={owned >= 7 ? 'good' : 'neutral'} /><StatPill label="Army readiness" value={formatPercent(world.army)} tone={world.army < 3000 ? 'warning' : 'neutral'} /></View>
+    <SectionTitle aside="Starting profile · not live statistics">National resource base</SectionTitle>
+    {(world.resources ?? []).map(resource => <Card key={resource.id} style={styles.resourceCard}><View style={styles.projectionRow}><View style={styles.rowCopy}><Text style={styles.rowTitle}>{resource.name}</Text><Text style={type.small}>{resource.category.toUpperCase()} · capacity affects territory wealth and recurring national revenue</Text></View><Text style={styles.rowValue}>{formatPercent(resource.capacity)}</Text></View><Meter value={resource.capacity} color={colors.teal} /></Card>)}
     <SectionTitle aside="Relations, power, and active treaties">Foreign powers</SectionTitle>
-    {world.nations.filter(nation => !nation.player).map(nation => <Card key={nation.id}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{nation.name}</Text><Text style={type.small}>{nation.atWar ? 'AT WAR WITH ORINTH' : nation.allied ? 'MUTUAL DEFENSE ALLY' : nation.pactIds?.length ? `REGIONAL PACT · ${nation.pactIds.map(id => world.nations.find(item => item.id === id)?.name ?? id).join(', ')}` : nation.relation < -35 ? 'HOSTILE' : nation.relation > 35 ? 'FRIENDLY' : 'UNALIGNED'} · Power {formatPercent(nation.power)}</Text></View><Text style={[styles.rowValue, nation.relation < -20 ? styles.risk : styles.positive]}>{nation.relation > 0 ? '+' : ''}{nation.relation}</Text></View><Meter value={nation.power} color={nation.atWar ? colors.red : nation.allied ? colors.teal : colors.gold} /></Card>)}
+    {world.nations.filter(nation => !nation.player).map(nation => <Card key={nation.id}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{nation.name}</Text><Text style={type.small}>{nation.atWar ? `AT WAR WITH ${sovereign.toUpperCase()}` : nation.allied ? 'MUTUAL DEFENSE ALLY' : nation.pactIds?.length ? `REGIONAL PACT · ${nation.pactIds.map(id => world.nations.find(item => item.id === id)?.name ?? id).join(', ')}` : nation.relation < -35 ? 'HOSTILE' : nation.relation > 35 ? 'FRIENDLY' : 'UNALIGNED'} · Power {formatPercent(nation.power)}</Text></View><Text style={[styles.rowValue, nation.relation < -20 ? styles.risk : styles.positive]}>{nation.relation > 0 ? '+' : ''}{nation.relation}</Text></View><Meter value={nation.power} color={nation.atWar ? colors.red : nation.allied ? colors.teal : colors.gold} /></Card>)}
     <SectionTitle aside="Strategic resources and local resistance">Territorial control</SectionTitle>
     {world.territories.map(land => {
       const owner = world.nations.find(nation => nation.id === land.ownerId);
       const isPlayer = land.ownerId === world.playerNationId;
-      return <Card key={land.id} style={isPlayer ? styles.territoryOwned : land.formerPlayerLand ? styles.territoryOccupied : undefined}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{land.name}</Text><Text style={type.small}>{owner?.name ?? 'Unknown power'} · resource: {land.resource}</Text></View><Text style={styles.rowValue}>{isPlayer ? 'ORINTH' : land.formerPlayerLand ? 'OCCUPIED' : 'FOREIGN'}</Text></View>{isPlayer ? <><Metric label="Local unrest" value={land.unrest} color={land.unrest > 5000 ? colors.red : colors.teal} />{land.resistance > 0 ? <Metric label="Resistance network" value={land.resistance} color={colors.gold} /> : null}</> : land.formerPlayerLand ? <Metric label="Liberation network" value={land.resistance} color={colors.gold} /> : null}</Card>;
+      return <Card key={land.id} style={isPlayer ? styles.territoryOwned : land.formerPlayerLand ? styles.territoryOccupied : undefined}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{land.name}</Text><Text style={type.small}>{owner?.name ?? 'Unknown power'} · resource: {land.resource}</Text></View><Text style={styles.rowValue}>{isPlayer ? 'NATIONAL' : land.formerPlayerLand ? 'OCCUPIED' : 'FOREIGN'}</Text></View>{isPlayer ? <><Metric label="Local unrest" value={land.unrest} color={land.unrest > 5000 ? colors.red : colors.teal} />{land.resistance > 0 ? <Metric label="Resistance network" value={land.resistance} color={colors.gold} /> : null}</> : land.formerPlayerLand ? <Metric label="Liberation network" value={land.resistance} color={colors.gold} /> : null}</Card>;
     })}
     <SectionTitle aside={`${world.wars.length} active`}>Wars and commercial deals</SectionTitle>
     {world.wars.map(war => {
       const attacker = world.nations.find(nation => nation.id === war.nationId)?.name ?? 'Unknown power';
       const rival = war.targetNationId ? world.nations.find(nation => nation.id === war.targetNationId)?.name ?? 'Unknown power' : undefined;
-      return <Card key={war.id} style={styles.warCard}><Text style={styles.eventKicker}>{rival ? 'REGIONAL WAR' : 'ACTIVE WAR'} · YEAR {war.yearsActive + 1}</Text><Text style={styles.rowTitle}>{rival ? `${attacker} vs. ${rival}` : `Orinth vs. ${attacker}`}</Text><Text style={type.small}>Casualties recorded: {numberFormat(war.casualties)} · {rival ? 'Their conflict is reshaping borders and trade.' : 'Annual treasury and morale drain continues until peace.'}</Text></Card>;
+      return <Card key={war.id} style={styles.warCard}><Text style={styles.eventKicker}>{rival ? 'REGIONAL WAR' : 'ACTIVE WAR'} · YEAR {war.yearsActive + 1}</Text><Text style={styles.rowTitle}>{rival ? `${attacker} vs. ${rival}` : `${sovereign} vs. ${attacker}`}</Text><Text style={type.small}>Casualties recorded: {numberFormat(war.casualties)} · {rival ? 'Their conflict is reshaping borders and trade.' : 'Annual treasury and morale drain continues until peace.'}</Text></Card>;
     })}
     {world.deals.map(deal => <Card key={deal.id}><Text style={styles.historyKind}>{deal.kind.toUpperCase()} · {deal.yearsRemaining} YEARS LEFT</Text><Text style={styles.rowTitle}>{world.nations.find(nation => nation.id === deal.nationId)?.name}</Text><Text style={type.small}>Annual revenue {formatResource(deal.annualIncome)} · breach risk {Math.round(deal.breachRisk * 100)}%</Text></Card>)}
     {!world.wars.length && !world.deals.length ? <Card><Text style={type.small}>No active wars or commercial agreements. The world will continue to shift as time advances.</Text></Card> : null}
@@ -270,8 +272,35 @@ function PoliticalNetwork({state}: {state: GameState}) {
 }
 
 function Finance({state}: {state: GameState}) {
+  const forecast = projectTreasury(state);
+  const latest = latestTreasuryImpacts(state);
   const metrics: Array<[string, number, string]> = [['Growth', state.economy.growth, 'Productive activity'], ['Employment', state.economy.employment, 'Participation and opportunity'], ['Price stability', 10000 - state.economy.inflation, 'Inverse of inflation pressure'], ['Equality', 10000 - state.economy.inequality, 'Distribution of gains'], ['Resilience', state.economy.resilience, 'Capacity to absorb shocks']];
-  return <ScreenContainer><Text style={type.title}>Treasury & economy</Text><View style={styles.statRow}><StatPill label="Treasury" value={formatResource(state.treasury)} /><StatPill label="Growth" value={formatPercent(state.economy.growth)} tone={state.economy.growth >= 5000 ? 'good' : 'warning'} /></View><Card>{metrics.map(([label, value, description]) => <View key={label} style={styles.economyRow}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{label}</Text><Text style={type.small}>{description}</Text></View><Text style={styles.rowValue}>{formatPercent(value)}</Text></View><Meter value={value} color={value >= 5000 ? colors.teal : colors.red} /></View>)}</Card><Card><Text style={styles.rowTitle}>How the economy moves</Text><Text style={type.subtitle}>Growth, employment, price pressure, inequality, and resilience update each turn. The treasury receives revenue from productive growth; low reserves add inflation pressure. Many investments mature after a delay.</Text></Card></ScreenContainer>;
+  const deals = state.world?.deals ?? [];
+  return <ScreenContainer>
+    <Text style={type.title}>Treasury & economy</Text>
+    <Text style={type.subtitle}>Every reserve, recurring income stream, war bill, and committed payment feeds the political simulation.</Text>
+    {state.treasury < 1200 ? <Card style={styles.warCard}><Text style={styles.eventKicker}>RESERVE EMERGENCY</Text><Text style={styles.rowTitle}>The state is approaching insolvency</Text><Text style={type.small}>Low cash now raises inflation, destroys resilience, weakens employment, and erodes legitimacy each period. Emergency financing and zero-cost civic actions remain available, but neither is consequence-free.</Text></Card> : null}
+    <View style={styles.statRow}><StatPill label="Treasury" value={formatResource(state.treasury)} /><StatPill label="Next net" value={`${forecast.net >= 0 ? '+' : '-'}${formatResource(Math.abs(forecast.net))}`} tone={forecast.net >= 0 ? 'good' : 'warning'} /><StatPill label="After settlement" value={formatResource(forecast.projectedBalance)} tone={forecast.projectedBalance >= 1000 ? 'neutral' : 'warning'} /></View>
+
+    <SectionTitle aside={`${formatResource(forecast.totalRevenue)} in · ${formatResource(forecast.totalExpenses)} out`}>Forward budget</SectionTitle>
+    <Card style={styles.ledgerCard}>
+      {[...forecast.revenues, ...forecast.expenses].map(line => <View key={line.id} style={styles.ledgerLine}><View style={styles.rowCopy}><Text style={styles.rowTitle}>{line.label}</Text><Text style={type.small}>{line.detail}</Text></View><Text style={[styles.ledgerAmount, line.amount >= 0 ? styles.positive : styles.negative]}>{line.amount >= 0 ? '+' : '-'}{formatResource(Math.abs(line.amount))}</Text></View>)}
+      {!forecast.revenues.length && !forecast.expenses.length ? <Text style={type.small}>No recurring cash flows are currently projected.</Text> : null}
+      <View style={styles.ledgerTotal}><Text style={styles.rowTitle}>Projected net</Text><Text style={[styles.ledgerAmount, forecast.net >= 0 ? styles.positive : styles.negative]}>{forecast.net >= 0 ? '+' : '-'}{formatResource(Math.abs(forecast.net))}</Text></View>
+      <Text style={styles.forecastNote}>Projection is calculated before your next decision. New policy, war, or a commercial breach can change it.</Text>
+    </Card>
+
+    {deals.length ? <><SectionTitle aside={`${deals.length} active`}>Commercial exposure</SectionTitle>{deals.map(deal => {
+      const partner = state.world?.nations.find(nation => nation.id === deal.nationId);
+      return <Card key={deal.id} style={styles.dealCard}><View style={styles.projectionRow}><View style={styles.rowCopy}><Text style={styles.historyKind}>{deal.kind.toUpperCase()} · {deal.yearsRemaining} YEARS REMAIN</Text><Text style={styles.rowTitle}>{partner?.name ?? 'Foreign partner'}</Text><Text style={type.small}>Annual income {formatResource(deal.annualIncome)}. Each settlement carries a {Math.round(deal.breachRisk * 100)}% breach risk unless war ends it first.</Text></View><Text style={styles.rowValue}>+{formatResource(deal.annualIncome)}</Text></View></Card>;
+    })}</> : null}
+
+    {latest.length ? <><SectionTitle aside="Last resolved turn">Treasury movements</SectionTitle><Card>{latest.map((impact, index) => <ImpactLine key={`${impact.source}-${index}`} state={state} impact={impact} source={impact.source} />)}</Card></> : null}
+
+    <SectionTitle aside="Live economy">Economic conditions</SectionTitle>
+    <Card>{metrics.map(([label, value, description]) => <View key={label} style={styles.economyRow}><View style={styles.projectionRow}><View><Text style={styles.rowTitle}>{label}</Text><Text style={type.small}>{description}</Text></View><Text style={styles.rowValue}>{formatPercent(value)}</Text></View><Meter value={value} color={value >= 5000 ? colors.teal : colors.red} /></View>)}</Card>
+    <Card><Text style={styles.rowTitle}>The pressure loop</Text><Text style={type.subtitle}>Growth expands recurring revenue. Empty reserves increase inflation. War drains cash and public patience. Investment can mature into future returns, while borrowing creates obligations that arrive whether or not the political moment is convenient.</Text></Card>
+  </ScreenContainer>;
 }
 
 function Intelligence({state}: {state: GameState}) {
@@ -368,8 +397,9 @@ const styles = StyleSheet.create({
   flex: {flex: 1}, autosave: {flexDirection: 'row', alignItems: 'center', gap: 4}, autosaveDot: {width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teal}, autosaveText: {fontSize: 8, fontWeight: '900', color: colors.muted, letterSpacing: 0.8},
   nav: {backgroundColor: colors.navy, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, flexDirection: 'row'}, navItem: {flex: 1, alignItems: 'center', justifyContent: 'center'}, navIcon: {color: colors.darkMuted, fontSize: 18, fontWeight: '800'}, navLabel: {color: colors.darkMuted, fontSize: 9, fontWeight: '800', marginTop: 4}, navActive: {color: colors.gold},
   eventBanner: {backgroundColor: '#2A2430', borderRadius: radius.md, borderWidth: 1, borderColor: '#7A5C57', padding: spacing.md, flexDirection: 'row', justifyContent: 'space-between'}, eventKicker: {color: colors.red, fontSize: 9, letterSpacing: 1.3, fontWeight: '900'}, eventTitle: {color: colors.text, fontSize: 18, fontWeight: '900', marginVertical: 4}, eventText: {color: colors.muted, fontSize: 12, lineHeight: 17, maxWidth: 290}, chevron: {color: colors.gold, fontSize: 28, alignSelf: 'center'},
-  territoryOwned: {borderColor: '#397b6b', backgroundColor: '#112c32'}, territoryOccupied: {borderColor: '#a34b4b', backgroundColor: '#321f28'}, warCard: {borderColor: '#a34b4b', backgroundColor: '#321f28'}, newsCrisis: {borderLeftWidth: 3, borderLeftColor: colors.red},
+  territoryOwned: {borderColor: '#397b6b', backgroundColor: '#112c32'}, territoryOccupied: {borderColor: '#a34b4b', backgroundColor: '#321f28'}, warCard: {borderColor: '#a34b4b', backgroundColor: '#321f28'}, newsCrisis: {borderLeftWidth: 3, borderLeftColor: colors.red}, resourceCard: {gap: spacing.sm, borderColor: '#315C62'},
   statRow: {flexDirection: 'row', gap: spacing.sm}, projectionCard: {gap: spacing.md}, projectionRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md}, projection: {color: colors.text, fontSize: 34, fontWeight: '900', marginTop: 3}, projectionTarget: {color: colors.muted, fontSize: 18}, raceBadge: {paddingVertical: 5, paddingHorizontal: 9, backgroundColor: '#173B3B', borderRadius: radius.pill}, raceBadgeText: {color: colors.teal, fontSize: 9, fontWeight: '900', letterSpacing: 0.8},
+  fiscalCard: {backgroundColor: '#112f32', borderRadius: radius.md, borderWidth: 1, borderColor: '#397b6b', padding: spacing.md}, fiscalDeficit: {backgroundColor: '#30242a', borderColor: '#8b5050'}, fiscalNet: {fontSize: 20, fontWeight: '900'}, ledgerCard: {gap: spacing.sm}, ledgerLine: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line}, ledgerAmount: {fontSize: 14, fontWeight: '900', minWidth: 70, textAlign: 'right'}, ledgerTotal: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: spacing.xs}, forecastNote: {color: colors.darkMuted, fontSize: 9, lineHeight: 14}, dealCard: {borderColor: '#31556B'},
   listRow: {minHeight: 72, backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.md, flexDirection: 'row', alignItems: 'center'}, regionBadge: {width: 40, height: 40, borderRadius: 12, backgroundColor: '#243B4A', alignItems: 'center', justifyContent: 'center', marginRight: spacing.md}, regionBadgeText: {color: colors.gold, fontWeight: '900'}, rowCopy: {flex: 1}, rowTitle: {color: colors.text, fontSize: 15, fontWeight: '800', marginBottom: 3}, rowValue: {color: colors.goldSoft, fontSize: 17, fontWeight: '900'}, alignRight: {alignItems: 'flex-end'}, historyKind: {color: colors.gold, fontSize: 9, fontWeight: '900', letterSpacing: 1.1, marginBottom: 5},
   resourceStrip: {flexDirection: 'row', gap: spacing.lg}, inlineValue: {color: colors.goldSoft, fontWeight: '900'}, actionCard: {backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.md}, actionSelected: {borderColor: colors.gold, backgroundColor: '#183142'}, actionTop: {flexDirection: 'row', justifyContent: 'space-between'}, actionCategory: {color: colors.teal, fontSize: 9, fontWeight: '900', letterSpacing: 1.2}, cost: {color: colors.goldSoft, fontSize: 9, fontWeight: '800'}, actionTitle: {color: colors.text, fontSize: 18, fontWeight: '900', marginVertical: 7}, effectRow: {marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}, effectText: {color: colors.teal, fontSize: 10, fontWeight: '800'}, delayed: {color: colors.blue, fontSize: 8, fontWeight: '900'}, targetPanel: {borderColor: colors.gold}, choiceHeading: {color: colors.text, fontSize: 18, fontWeight: '900'}, targetList: {flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm}, spaceBottom: {marginBottom: spacing.md}, spaceTop: {marginTop: spacing.md},
   tabRow: {flexDirection: 'row', gap: spacing.sm}, personHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md}, avatar: {width: 44, height: 44, borderRadius: 16, backgroundColor: '#284556', alignItems: 'center', justifyContent: 'center', marginRight: spacing.md}, avatarText: {color: colors.goldSoft, fontWeight: '900'}, memoryCount: {color: colors.muted, fontSize: 9}, metric: {marginTop: spacing.md}, metricLabel: {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5}, economyRow: {marginBottom: spacing.lg},

@@ -7,7 +7,7 @@ Political Strategy Simulator is a fictional, free-with-ads Android game. This po
 
 ## Core gameplay and local storage
 
-No account or login is required for ordinary play. Campaign state, save slots, settings, achievements, advertising frequency-cap timestamps, queued telemetry, and cached approved AI policy files may be stored locally on your device. Core gameplay is available offline. Local data remains until you delete it in the app, clear the app's storage, or uninstall the app.
+No account or login is required for ordinary play. Campaign state, save slots, settings, achievements, advertising frequency-cap timestamps, queued telemetry, and cached approved AI policy files may be stored locally on your device. Core gameplay is available offline. Local save slots can be managed from the campaign archive. Other local data remains until you clear the app's storage or uninstall the app.
 
 ## Advertising
 
@@ -29,19 +29,19 @@ Collective learning requires both gameplay-analytics consent and the separate co
 
 The learning dataset is designed not to contain your name, email, contacts, precise location, real political affiliation, real voting preference or intention, advertising identifier, or device fingerprint. Fictional in-game choices are treated only as game behavior and not as evidence of real political beliefs.
 
-Accepted records from participating players may be combined with simulated self-play and used in batch behavior-cloning, offline reinforcement-learning, self-play, evaluation, and balancing processes. A trained model contains learned parameters rather than a list of individual game records. A deletion request removes linked raw records when still retained, but cannot reliably reverse already aggregated statistics or parameters in models trained before deletion; this policy does not promise machine unlearning.
+Accepted records from participating players may be combined with simulated self-play and used in batch behavior-cloning, offline reinforcement-learning, self-play, evaluation, and balancing processes. Accepted gameplay records become part of the game's operational and collective-learning history and are not removable through the app. A trained model contains learned parameters rather than a list of individual game records, and previously aggregated statistics or trained parameters cannot reliably be reversed.
 
 ## Pseudonymous identifiers and server processing
 
-If optional data sharing is enabled, the app creates a random installation token. The server stores a keyed cryptographic hash of that token rather than the raw token. The token exists only to support batching, deduplication, rate limiting, retention measurement, and deletion. It is not joined to advertising identifiers.
+If optional data sharing is enabled, the app creates a random installation token. The server stores a keyed cryptographic hash of that token rather than the raw token. The token exists only to support batching, deduplication, rate limiting, and retention measurement. It is not joined to advertising identifiers.
 
 Production transmission must use HTTPS. The server validates request schemas, rejects prohibited fields, limits batch/request size, rate-limits ingestion, and restricts administrative access. Raw gameplay and analytics data are intended to be retained only for the documented operating/training period and then deleted or aggregated. The initial recommended raw-retention limit is 180 days; production operations must configure and enforce the adopted period.
 
-## Data deletion and choices
+## Data choices and requests
 
-In **Settings → Privacy controls**, you can turn optional analytics and collective learning on/off, open Google advertising privacy options where available, and delete local plus server-linked raw gameplay records.
+In **Settings → Privacy controls**, you can turn optional analytics and collective learning on/off and open Google advertising privacy options where available. Turning sharing off stops new uploads while it remains disabled; it does not delete gameplay records already accepted by the service.
 
-If the server cannot be reached, local deletion still completes and the server request must be retried when connectivity is available. Previously aggregated statistics and trained parameters cannot reliably be reversed.
+The app does not provide a self-service action for deleting accepted gameplay records. Privacy requests required by applicable law may be sent to the contact address below and will be handled according to the verified request and governing requirements. Local save slots remain manageable from the campaign archive, and clearing the app's storage or uninstalling removes data stored on the device.
 
 ## Sharing and service providers
 

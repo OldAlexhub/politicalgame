@@ -66,16 +66,6 @@ export async function flushExperiences(settings: AppSettings): Promise<{uploaded
   }
 }
 
-export async function deleteServerTelemetry() {
-  const installationId = await anonymousInstallationId();
-  await Promise.all([QUEUE_KEY, ANALYTICS_QUEUE_KEY].map(key => AsyncStorage.removeItem(key)));
-  if (!APP.apiBaseUrl) { await AsyncStorage.removeItem(INSTALL_KEY); return {serverContacted: false}; }
-  const response = await fetch(`${APP.apiBaseUrl}/api/v1/privacy/delete`, {method: 'POST', headers: {'X-Install-Token': installationId}});
-  if (!response.ok) throw new Error('The server could not process the deletion request.');
-  await AsyncStorage.removeItem(INSTALL_KEY);
-  return {serverContacted: true};
-}
-
 async function anonymousInstallationId() {
   let id = await AsyncStorage.getItem(INSTALL_KEY);
   if (!id) {

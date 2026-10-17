@@ -1,34 +1,46 @@
 import {nextRandom, randomBetween, stableId} from './rng';
 import {ActionDefinition, GameState, WorldActionEffect, WorldNews, WorldState, WorldTerritory} from './types';
+import {COUNTRY_PROFILES, getCountryProfile} from './data/countries';
 
-const player = 'orinth';
-
-export function createWorldState(): WorldState {
+export function createWorldState(countryId?: string): WorldState {
+  const profile = getCountryProfile(countryId);
+  const player = profile.id;
+  const profileIndex = COUNTRY_PROFILES.findIndex(country => country.id === player);
+  const rivals = [1, 4, 7, 10, 13].map(offset => COUNTRY_PROFILES[(profileIndex + offset) % COUNTRY_PROFILES.length]);
+  const [friendly, trading, hostile, emerging, major] = rivals;
+  const [primary, secondary, tertiary, fourth, fifth] = profile.resources;
+  const wealth = (capacity: number, adjustment = 0) => Math.max(3200, Math.min(9000, 4200 + Math.round(capacity * 0.45) + adjustment));
+  const playerTerritories = {
+    capital: `${player}-capital`, industry: `${player}-industry`, agriculture: `${player}-agriculture`, frontier: `${player}-frontier`, gateway: `${player}-gateway`,
+  };
+  const rivalTerritories = {
+    friendly: `${friendly.id}-border`, major: `${major.id}-route`, hostileBorder: `${hostile.id}-border`, hostileCore: `${hostile.id}-core`, emergingBorder: `${emerging.id}-border`, emergingCore: `${emerging.id}-core`, trading: `${trading.id}-straits`,
+  };
   return {
-    year: 1, playerNationId: player, army: 4300,
+    year: 1, playerNationId: player, playerCountryId: profile.id, army: profile.army, resources: profile.resources.map(item => ({...item})),
     nations: [
-      {id: player, name: 'Republic of Orinth', player: true, relation: 0, power: 6100, aggression: 2500, allied: false, atWar: false, pactIds: []},
-      {id: 'valedorn', name: 'Crown of Valedorn', player: false, relation: 18, power: 6400, aggression: 2600, allied: false, atWar: false, pactIds: []},
-      {id: 'serevan', name: 'Serevan League', player: false, relation: 8, power: 4800, aggression: 3000, allied: false, atWar: false, pactIds: []},
-      {id: 'karsic', name: 'Karsic Dominion', player: false, relation: -24, power: 8200, aggression: 6900, allied: false, atWar: false, pactIds: []},
-      {id: 'fen', name: 'Fen Republic', player: false, relation: 4, power: 3900, aggression: 1800, allied: false, atWar: false, pactIds: []},
-      {id: 'aurelian', name: 'Aurelian Compact', player: false, relation: 12, power: 7100, aggression: 3400, allied: false, atWar: false, pactIds: []},
+      {id: player, name: profile.name, player: true, relation: 0, power: profile.power, aggression: 2500, allied: false, atWar: false, pactIds: []},
+      {id: friendly.id, name: friendly.name, player: false, relation: 18, power: friendly.power, aggression: 2600, allied: false, atWar: false, pactIds: []},
+      {id: trading.id, name: trading.name, player: false, relation: 8, power: trading.power, aggression: 3000, allied: false, atWar: false, pactIds: []},
+      {id: hostile.id, name: hostile.name, player: false, relation: -24, power: hostile.power, aggression: 6900, allied: false, atWar: false, pactIds: []},
+      {id: emerging.id, name: emerging.name, player: false, relation: 4, power: emerging.power, aggression: 1800, allied: false, atWar: false, pactIds: []},
+      {id: major.id, name: major.name, player: false, relation: 12, power: major.power, aggression: 3400, allied: false, atWar: false, pactIds: []},
     ],
     territories: [
-      territory('orinth-capital', 'Orinth Capital', player, ['iron-coast', 'north-march'], 'government', 6800),
-      territory('iron-coast', 'Iron Coast', player, ['orinth-capital', 'sunward-ports', 'karsic-gate'], 'steel', 7200),
-      territory('verdant-plain', 'Verdant Plain', player, ['north-march', 'sunward-ports', 'fen-border'], 'grain', 6100),
-      territory('north-march', 'North March', player, ['orinth-capital', 'verdant-plain', 'valedorn-pass'], 'timber', 4600),
-      territory('sunward-ports', 'Sunward Ports', player, ['iron-coast', 'verdant-plain', 'serevan-straits'], 'shipping', 7900),
-      territory('valedorn-pass', 'Valedorn March', 'valedorn', ['north-march', 'aurelian-road'], 'silver', 5900),
-      territory('aurelian-road', 'Aurelian Road', 'aurelian', ['valedorn-pass', 'karsic-gate'], 'trade', 7600),
-      territory('karsic-gate', 'Karsic Gate', 'karsic', ['iron-coast', 'aurelian-road', 'karsic-heart'], 'iron', 7000),
-      territory('karsic-heart', 'Karsic Heartland', 'karsic', ['karsic-gate'], 'oil', 8300),
-      territory('fen-border', 'Fen Border', 'fen', ['verdant-plain', 'fen-delta'], 'grain', 4200),
-      territory('fen-delta', 'Fen Delta', 'fen', ['fen-border'], 'river trade', 5200),
-      territory('serevan-straits', 'Serevan Straits', 'serevan', ['sunward-ports'], 'shipping', 8100),
+      territory(playerTerritories.capital, `${profile.capital} Capital Region`, player, [playerTerritories.industry, playerTerritories.frontier], primary.name, wealth(primary.capacity, 300)),
+      territory(playerTerritories.industry, `${profile.name} Industrial Belt`, player, [playerTerritories.capital, playerTerritories.gateway, rivalTerritories.hostileBorder], secondary.name, wealth(secondary.capacity, 200)),
+      territory(playerTerritories.agriculture, `${profile.name} Agricultural Basin`, player, [playerTerritories.frontier, playerTerritories.gateway, rivalTerritories.emergingBorder], tertiary.name, wealth(tertiary.capacity)),
+      territory(playerTerritories.frontier, `${profile.name} Frontier`, player, [playerTerritories.capital, playerTerritories.agriculture, rivalTerritories.friendly], fourth.name, wealth(fourth.capacity, -500)),
+      territory(playerTerritories.gateway, `${profile.name} Trade Gateway`, player, [playerTerritories.industry, playerTerritories.agriculture, rivalTerritories.trading], fifth.name, wealth(fifth.capacity, 400)),
+      territory(rivalTerritories.friendly, `${friendly.name} Border Zone`, friendly.id, [playerTerritories.frontier, rivalTerritories.major], friendly.resources[0].name, wealth(friendly.resources[0].capacity)),
+      territory(rivalTerritories.major, `${major.name} Strategic Route`, major.id, [rivalTerritories.friendly, rivalTerritories.hostileBorder], major.resources[0].name, wealth(major.resources[0].capacity, 200)),
+      territory(rivalTerritories.hostileBorder, `${hostile.name} Frontier`, hostile.id, [playerTerritories.industry, rivalTerritories.major, rivalTerritories.hostileCore], hostile.resources[0].name, wealth(hostile.resources[0].capacity)),
+      territory(rivalTerritories.hostileCore, `${hostile.name} Core Region`, hostile.id, [rivalTerritories.hostileBorder], hostile.resources[1].name, wealth(hostile.resources[1].capacity, 400)),
+      territory(rivalTerritories.emergingBorder, `${emerging.name} Border Zone`, emerging.id, [playerTerritories.agriculture, rivalTerritories.emergingCore], emerging.resources[0].name, wealth(emerging.resources[0].capacity, -300)),
+      territory(rivalTerritories.emergingCore, `${emerging.name} Core Region`, emerging.id, [rivalTerritories.emergingBorder], emerging.resources[1].name, wealth(emerging.resources[1].capacity)),
+      territory(rivalTerritories.trading, `${trading.name} Maritime Route`, trading.id, [playerTerritories.gateway], trading.resources[0].name, wealth(trading.resources[0].capacity, 300)),
     ],
-    deals: [], wars: [], news: [{id: 'world-opening', year: 1, headline: 'A continent on edge', detail: 'Orinth enters a new century surrounded by ambitious neighbors, fragile trade routes, and old border claims.', severity: 'brief'}],
+    deals: [], wars: [], news: [{id: 'world-opening', year: 1, headline: `${profile.name} enters an alternate century`, detail: `This fictional scenario begins with ${profile.name}'s broad resource profile, surrounded by simulated rivals, fragile trade routes, and invented future events. It is not current-world reporting.`, severity: 'brief'}],
   };
 }
 
@@ -59,6 +71,7 @@ export function canUseWorldAction(state: GameState, action: ActionDefinition, ta
 export function applyWorldAction(state: GameState, effect: WorldActionEffect | undefined, targetId?: string): WorldNews[] {
   const world = state.world;
   if (!world || !effect) return [];
+  const sovereign = world.nations.find(item => item.id === world.playerNationId)?.name ?? 'Your country';
   const nation = world.nations.find(item => item.id === targetId);
   const land = world.territories.find(item => item.id === targetId);
   const news: WorldNews[] = [];
@@ -69,21 +82,21 @@ export function applyWorldAction(state: GameState, effect: WorldActionEffect | u
   if (effect === 'trade' && nation) {
     nation.relation = Math.min(100, nation.relation + 12);
     world.deals.push({id: stableId('trade', state.seed, state.turn), nationId: nation.id, kind: 'trade', annualIncome: 360, yearsRemaining: 8, breachRisk: 0.06});
-    publish('New trade corridor', `Orinth and ${nation.name} open an eight-year trade corridor. Port revenues rise, but both governments are now exposed to disruption.`, 'brief');
+    publish('New trade corridor', `${sovereign} and ${nation.name} open an eight-year trade corridor. Port revenues rise, but both governments are now exposed to disruption.`, 'brief');
   } else if (effect === 'business' && nation) {
     nation.relation = Math.min(100, nation.relation + 6);
     world.deals.push({id: stableId('business', state.seed, state.turn), nationId: nation.id, kind: 'business', annualIncome: 680, yearsRemaining: 5, breachRisk: 0.16});
-    publish('Cross-border consortium signed', `A five-year industrial consortium with ${nation.name} promises revenue and jobs. Critics warn that a future breach could expose Orinth's supply chain.`, 'pressure');
+    publish('Cross-border consortium signed', `A five-year industrial consortium with ${nation.name} promises revenue and jobs. Critics warn that a future breach could expose ${sovereign}'s supply chain.`, 'pressure');
   } else if (effect === 'alliance' && nation) {
     nation.allied = true; nation.relation = Math.min(100, nation.relation + 25);
-    publish('Mutual defense pact', `${nation.name} and Orinth sign a mutual-defense pact. The pact deters aggression but could pull Orinth into a wider conflict.`, 'pressure');
+    publish('Mutual defense pact', `${nation.name} and ${sovereign} sign a mutual-defense pact. The pact deters aggression but could pull both countries into a wider conflict.`, 'pressure');
   } else if (effect === 'declare-war' && nation) {
     nation.atWar = true; nation.relation = Math.max(-100, nation.relation - 55);
     world.wars.push({id: stableId('war', state.seed, state.turn), nationId: nation.id, yearsActive: 0, casualties: 0});
-    publish('War declared', `Orinth declares war on ${nation.name}. Mobilization begins across the border and the markets react immediately.`, 'crisis');
+    publish('War declared', `${sovereign} declares war on ${nation.name}. Mobilization begins across the border and the markets react immediately.`, 'crisis');
   } else if (effect === 'peace' && nation) {
     world.wars = world.wars.filter(war => war.nationId !== nation.id); nation.atWar = false; nation.allied = false; nation.relation = Math.min(100, nation.relation + 20);
-    publish('Ceasefire takes hold', `Orinth and ${nation.name} accept a ceasefire. The guns fall silent, but border claims and public anger remain unresolved.`, 'pressure');
+    publish('Ceasefire takes hold', `${sovereign} and ${nation.name} accept a ceasefire. The guns fall silent, but border claims and public anger remain unresolved.`, 'pressure');
   } else if (effect === 'mobilize') {
     world.army = Math.min(10000, world.army + 1900); state.treasury = Math.max(0, state.treasury - 180);
     publish('Reserve forces mobilized', 'New brigades report for duty. Readiness improves, while the treasury and neighboring capitals come under pressure.', 'pressure');
@@ -96,15 +109,15 @@ export function applyWorldAction(state: GameState, effect: WorldActionEffect | u
     if (draw.value < chance) {
       land.formerPlayerLand = false; land.ownerId = world.playerNationId; land.unrest = 5700; land.resistance = 0;
       if (defender) { defender.relation = Math.max(-100, defender.relation - 18); defender.power = Math.max(1000, defender.power - 360); }
-      publish(`${land.name} falls to Orinth`, `Orinthian forces capture ${land.name}. The territory is secured, but unrest is high and the front remains active.`, 'crisis');
+      publish(`${land.name} falls to ${sovereign}`, `${sovereign}'s forces capture ${land.name}. The territory is secured, but unrest is high and the front remains active.`, 'crisis');
     } else {
       if (defender) defender.power = Math.max(1000, defender.power - 160);
-      publish(`Assault on ${land.name} repelled`, `Defending forces hold ${land.name}. Orinth suffers heavy losses and the war grows more unpopular at home.`, 'crisis');
+      publish(`Assault on ${land.name} repelled`, `Defending forces hold ${land.name}. ${sovereign} suffers heavy losses and the war grows more unpopular at home.`, 'crisis');
       state.publicSentiment = Math.max(0, state.publicSentiment - 280);
     }
   } else if (effect === 'resistance' && land) {
     land.resistance = Math.min(10000, land.resistance + 3600);
-    publish('Resistance network organized', `Underground organizers in ${land.name} begin coordinating with Orinth. Retaliation risk is rising.`, 'pressure');
+    publish('Resistance network organized', `Underground organizers in ${land.name} begin coordinating with ${sovereign}. Retaliation risk is rising.`, 'pressure');
   } else if (effect === 'rebuild' && land) {
     land.unrest = Math.max(0, land.unrest - 2800); state.legitimacy = Math.min(10000, state.legitimacy + 180);
     publish(`Reconstruction in ${land.name}`, 'Public works, security guarantees, and local councils begin restoring order after the fighting.', 'brief');
@@ -122,6 +135,7 @@ export function advanceWorld(state: GameState): WorldNews[] {
     world.news.unshift(item); world.news = world.news.slice(0, 30); news.push(item);
   };
   const playerNation = world.nations.find(item => item.id === world.playerNationId)!;
+  const sovereign = playerNation.name;
   const owned = world.territories.filter(item => item.ownerId === world.playerNationId);
   state.treasury = Math.max(0, state.treasury + owned.reduce((sum, item) => sum + Math.round(item.wealth / 65), 0));
   world.deals = world.deals.filter(deal => {
@@ -130,6 +144,23 @@ export function advanceWorld(state: GameState): WorldNews[] {
       state.treasury = Math.max(0, state.treasury - 140);
       publish(`${deal.kind === 'trade' ? 'Trade corridor' : 'Business contract'} disrupted`, `Fighting with ${nation.name} has suspended a cross-border agreement.`, 'pressure');
       return false;
+    }
+    const originalTerm = deal.kind === 'trade' ? 8 : 5;
+    if (deal.yearsRemaining < originalTerm) {
+      const breach = nextRandom(state.randomState); state.randomState = breach.state;
+      if (breach.value < deal.breachRisk) {
+        const loss = deal.kind === 'trade' ? 220 : 480;
+        state.treasury = Math.max(0, state.treasury - loss);
+        state.economy.growth = Math.max(0, state.economy.growth - (deal.kind === 'trade' ? 140 : 260));
+        state.economy.employment = Math.max(0, state.economy.employment - (deal.kind === 'trade' ? 80 : 220));
+        if (nation) nation.relation = Math.max(-100, nation.relation - (deal.kind === 'trade' ? 10 : 18));
+        publish(
+          `${deal.kind === 'trade' ? 'Trade pact' : 'Industrial consortium'} collapses`,
+          `${nation?.name ?? 'A foreign partner'} breaches the agreement. ${sovereign} loses ${loss} treasury, firms cut activity, and relations deteriorate.`,
+          deal.kind === 'business' ? 'crisis' : 'pressure',
+        );
+        return false;
+      }
     }
     state.treasury += deal.annualIncome;
     deal.yearsRemaining -= 1;
@@ -149,7 +180,7 @@ export function advanceWorld(state: GameState): WorldNews[] {
     const draw = nextRandom(state.randomState); state.randomState = draw.state;
     if (draw.value < 0.42) {
       land.ownerId = world.playerNationId; land.formerPlayerLand = false; land.resistance = 0; land.unrest = 7600;
-      publish(`Uprising retakes ${land.name}`, 'Local resistance has driven the occupying garrison out. Orinth regains the land, but now has to protect it.', 'crisis');
+      publish(`Uprising retakes ${land.name}`, `Local resistance has driven the occupying garrison out. ${sovereign} regains the land, but now has to protect it.`, 'crisis');
     }
   }
   const hostile = world.nations.filter(item => !item.player && !item.atWar && !item.allied && item.relation <= -45 && owned.some(ownedTerritory => ownedTerritory.neighbors.some(id => world.territories.some(border => border.id === id && border.ownerId === item.id))));
@@ -159,7 +190,7 @@ export function advanceWorld(state: GameState): WorldNews[] {
     if (draw.value < threshold) {
       nation.atWar = true; nation.relation = Math.max(-100, nation.relation - 18);
       world.wars.push({id: stableId('war', state.seed, state.turn + nation.power), nationId: nation.id, yearsActive: 0, casualties: 0});
-      publish(`${nation.name} opens a new front`, 'Border forces cross into disputed territory. Orinth must mobilize, seek allies, or attempt a ceasefire.', 'crisis');
+      publish(`${nation.name} opens a new front`, `Border forces cross into disputed territory. ${sovereign} must mobilize, seek allies, or attempt a ceasefire.`, 'crisis');
       break;
     }
   }
@@ -187,7 +218,7 @@ export function advanceWorld(state: GameState): WorldNews[] {
     if (draw.value < 0.028) {
       const pair = rivalPairs[Math.floor(draw.value / 0.028 * rivalPairs.length) % rivalPairs.length];
       world.wars.push({id: stableId('rival-war', state.seed, state.turn), nationId: pair.attacker.id, targetNationId: pair.defender.id, yearsActive: 0, casualties: 0});
-      publish(`${pair.attacker.name} clashes with ${pair.defender.name}`, 'A regional war redraws the balance of power. Refugees strain nearby trade routes, and Orinth must decide whether to profit, mediate, or prepare for spillover.', 'pressure');
+      publish(`${pair.attacker.name} clashes with ${pair.defender.name}`, `A regional war redraws the balance of power. Refugees strain nearby trade routes, and ${sovereign} must decide whether to profit, mediate, or prepare for spillover.`, 'pressure');
     }
   }
   for (const war of world.wars.filter(item => item.targetNationId)) {

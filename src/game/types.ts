@@ -114,10 +114,18 @@ export interface WorldNews {
   detail: string;
   severity: 'brief' | 'pressure' | 'crisis';
 }
+export interface StrategicResource {
+  id: string;
+  name: string;
+  category: 'energy' | 'industry' | 'agriculture' | 'minerals' | 'trade' | 'technology' | 'services';
+  capacity: number;
+}
 export interface WorldState {
   year: number;
   playerNationId: string;
+  playerCountryId?: string;
   army: number;
+  resources?: StrategicResource[];
   nations: WorldNation[];
   territories: WorldTerritory[];
   deals: WorldDeal[];
@@ -314,6 +322,7 @@ export interface ActionDefinition {
   effects: MetricChange[];
   delayedEffects?: Omit<ScheduledEffect, 'id' | 'dueTurn'> & {delay: number};
   minimumTurn?: number;
+  maximumTreasury?: number;
   once?: boolean;
   worldEffect?: WorldActionEffect;
 }

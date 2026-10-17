@@ -6,7 +6,8 @@ import {AppSettings, GameMode, GameState, SaveSlot} from './src/game/types';
 import {advertising} from './src/services/ads';
 import {modelPolicy} from './src/services/modelPolicy';
 import {flushAnalytics, queueAnalytics} from './src/services/telemetry';
-import {clearLocalData, DEFAULT_SETTINGS, listSaves, loadSettings, saveCampaign, saveSettings} from './src/services/storage';
+import {DEFAULT_SETTINGS, listSaves, loadSettings, saveCampaign, saveSettings} from './src/services/storage';
+import {setGameMusic} from './src/services/worldAudio';
 import {AppShell, SafeAdContainer} from './src/ui/components/Layout';
 import {CampaignScreen} from './src/ui/screens/CampaignScreen';
 import {
@@ -32,6 +33,12 @@ function App() {
   const appState = useRef(AppState.currentState);
 
   useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  useEffect(() => {
+    if (!ready) return;
+    setGameMusic(settings.sound);
+    return () => setGameMusic(false);
+  }, [ready, settings.sound]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -70,10 +77,12 @@ function App() {
     const subscription = AppState.addEventListener('change', nextState => {
       const previous = appState.current;
       if (previous === 'active' && nextState !== 'active') {
+        setGameMusic(false);
         const seconds = Math.max(1, Math.round((Date.now() - sessionStartedAt.current) / 1000));
         queueAnalytics({schemaVersion: 1, event: 'session_end', occurredAt: new Date().toISOString(), value: seconds}, settingsRef.current)
           .then(() => flushAnalytics(settingsRef.current));
       } else if (previous !== 'active' && nextState === 'active') {
+        setGameMusic(settingsRef.current.sound);
         sessionStartedAt.current = Date.now();
         advertising.initialize().catch(() => false);
         queueAnalytics({schemaVersion: 1, event: 'session_start', occurredAt: new Date().toISOString()}, settingsRef.current)
@@ -93,7 +102,7 @@ function App() {
     startingCampaignRef.current = true;
     setStartingCampaign(true);
     try {
-      const next = createCampaign({mode: configuration.mode, candidateId: configuration.candidate.id, difficulty: configuration.difficulty, seed: configuration.seed});
+      const next = createCampaign({mode: configuration.mode, candidateId: configuration.candidate.id, difficulty: configuration.difficulty, seed: configuration.seed, countryId: configuration.countryId});
       next.policyVersion = await modelPolicy.getActiveVersion().catch(() => next.policyVersion);
 
       // Enter gameplay before optional bookkeeping. A storage or telemetry failure
@@ -116,16 +125,6 @@ function App() {
     updateSettings({...settings, consent: {analytics, collectiveLearning, decidedAt: new Date().toISOString()}});
     setScreen('home');
   };
-  const clearAll = async () => {
-    await clearLocalData();
-    setCampaign(null);
-    setSaves([]);
-    const next = {...DEFAULT_SETTINGS, consent: {analytics: false, collectiveLearning: false, decidedAt: new Date().toISOString()}};
-    setSettings(next);
-    await saveSettings(next);
-    setScreen('home');
-  };
-
   let content: React.ReactNode;
   if (!ready) content = <View style={styles.loading}><ActivityIndicator color={colors.gold} /><Text style={styles.loadingText}>Preparing the simulation…</Text></View>;
   else if (screen === 'consent') content = <ConsentIntroScreen onChoose={chooseConsent} />;
@@ -136,7 +135,7 @@ function App() {
   else if (screen === 'saves') content = <SavesScreen saves={saves} onBack={() => setScreen('home')} onLoad={slot => { setCampaign(slot.state); setScreen('campaign'); }} onChanged={refreshSaves} />;
   else if (screen === 'achievements') content = <AchievementsScreen onBack={() => setScreen('home')} />;
   else if (screen === 'settings') content = <SettingsScreen settings={settings} onBack={() => setScreen('home')} onChange={updateSettings} onPrivacy={() => setScreen('privacy')} />;
-  else if (screen === 'privacy') content = <PrivacyScreen settings={settings} onBack={() => setScreen('settings')} onChange={updateSettings} onLocalCleared={clearAll} />;
+  else if (screen === 'privacy') content = <PrivacyScreen settings={settings} onBack={() => setScreen('settings')} onChange={updateSettings} />;
   else content = <AboutScreen onBack={() => setScreen('home')} />;
 
   const bannerPlacement = screen === 'campaign'

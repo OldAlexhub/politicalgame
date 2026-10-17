@@ -1,11 +1,11 @@
 import React, {useEffect, useState} from 'react';
 import {Alert, Pressable, StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 import {APP} from '../../config/appConfig';
+import {COUNTRY_PROFILES, DEFAULT_COUNTRY_ID, getCountryProfile} from '../../game/data/countries';
 import {CANDIDATES, MODE_COPY} from '../../game/scenarios';
 import {AppSettings, CandidateProfile, Difficulty, GameMode, SaveSlot} from '../../game/types';
 import {advertising} from '../../services/ads';
 import {ACHIEVEMENTS, clearSavedCampaigns, deleteSave, loadAchievements} from '../../services/storage';
-import {deleteServerTelemetry} from '../../services/telemetry';
 import {colors, radius, spacing} from '../theme';
 import {Card, GhostButton, HeroBrand, Meter, PrimaryButton, ScreenContainer, SectionTitle, TopBar, type} from '../components/Layout';
 
@@ -27,7 +27,7 @@ export function HomeScreen({onNew, onLoad, onNavigate}: {onNew: () => void; onLo
           <GhostButton label="Settings" onPress={() => onNavigate('settings')} />
           <GhostButton label="About" onPress={() => onNavigate('about')} />
         </View>
-        <Text style={styles.fictionNotice}>FICTIONAL SIMULATION · NO GOVERNMENT AFFILIATION · CORE PLAY WORKS OFFLINE</Text>
+        <Text style={styles.fictionNotice}>ALTERNATE-HISTORY SIMULATION · NO GOVERNMENT AFFILIATION · CORE PLAY WORKS OFFLINE</Text>
       </ScreenContainer>
     </>
   );
@@ -60,20 +60,34 @@ export function ModeSelectScreen({onBack, onSelect}: {onBack: () => void; onSele
   );
 }
 
-export interface CampaignConfiguration {mode: GameMode; candidate: CandidateProfile; difficulty: Difficulty; seed: number;}
+export interface CampaignConfiguration {mode: GameMode; candidate: CandidateProfile; difficulty: Difficulty; seed: number; countryId?: string;}
 
 export function CampaignConfigScreen({mode, starting = false, onBack, onStart}: {mode: GameMode; starting?: boolean; onBack: () => void; onStart: (configuration: CampaignConfiguration) => void}) {
   const [candidate, setCandidate] = useState(CANDIDATES[0]);
   const [difficulty, setDifficulty] = useState<Difficulty>('standard');
+  const [countryId, setCountryId] = useState(DEFAULT_COUNTRY_ID);
   const [seedText, setSeedText] = useState(`${Math.floor(Date.now() / 86400000)}`);
   const copy = MODE_COPY[mode];
+  const country = getCountryProfile(countryId);
   return (
     <>
       <TopBar title="New campaign" subtitle={copy.title} onBack={onBack} />
       <ScreenContainer>
         <Text style={type.title}>{copy.title}</Text>
         <Text style={type.subtitle}>{copy.objective}</Text>
-        <SectionTitle aside="Changes strategic bonuses">Leadership profile</SectionTitle>
+        {mode === 'grand_campaign' ? <>
+          <SectionTitle aside="18 playable starting profiles">Choose your country</SectionTitle>
+          <View style={styles.countryGrid}>{COUNTRY_PROFILES.map(item => <Pressable accessibilityRole="button" accessibilityState={{selected: countryId === item.id}} key={item.id} onPress={() => setCountryId(item.id)} style={[styles.countryPill, countryId === item.id && styles.countryPillActive]}><Text style={[styles.countryPillText, countryId === item.id && styles.countryPillTextActive]}>{item.name}</Text></Pressable>)}</View>
+          <Card style={styles.countryCard}>
+            <Text style={styles.choiceTitle}>{country.name}</Text>
+            <Text style={styles.choiceMeta}>{country.capital} · {country.region}</Text>
+            <Text style={[type.subtitle, styles.countrySummary]}>{country.summary}</Text>
+            <View style={styles.countryStats}><Text style={type.small}>Treasury <Text style={styles.countryStatValue}>{country.treasury}</Text></Text><Text style={type.small}>Power <Text style={styles.countryStatValue}>{Math.round(country.power / 100)}%</Text></Text><Text style={type.small}>Army <Text style={styles.countryStatValue}>{Math.round(country.army / 100)}%</Text></Text></View>
+            {country.resources.map(resource => <View key={resource.id} style={styles.countryResource}><View style={styles.resourceHeading}><Text style={styles.resourceName}>{resource.name}</Text><Text style={styles.resourceCapacity}>{Math.round(resource.capacity / 100)}%</Text></View><Text style={styles.resourceCategory}>{resource.category.toUpperCase()}</Text><Meter value={resource.capacity} color={colors.teal} /></View>)}
+            <Text style={styles.profileNotice}>Country names and broad resource categories are real. Ratings are gameplay profiles, not live statistics. Leaders, events, alliances, wars, and outcomes are fictional.</Text>
+          </Card>
+        </> : null}
+        <SectionTitle aside="Changes strategic bonuses">{mode === 'grand_campaign' ? 'Fictional leadership profile' : 'Leadership profile'}</SectionTitle>
         {CANDIDATES.map(item => (
           <Pressable key={item.id} onPress={() => setCandidate(item)} style={[styles.choiceCard, candidate.id === item.id && styles.choiceActive]}>
             <View style={styles.choiceRadio}>{candidate.id === item.id ? <View style={styles.choiceDot} /> : null}</View>
@@ -89,7 +103,7 @@ export function CampaignConfigScreen({mode, starting = false, onBack, onStart}: 
           <Text style={[type.small, styles.spaceBottom]}>Share a seed to replay the same starting conditions and random sequence.</Text>
           <TextInput accessibilityLabel="Scenario seed" keyboardType="number-pad" value={seedText} onChangeText={value => setSeedText(value.replace(/[^0-9]/g, '').slice(0, 10))} placeholder="Seed" placeholderTextColor={colors.darkMuted} style={styles.input} />
         </Card>
-        <PrimaryButton label={starting ? 'Preparing campaign…' : 'Enter the political arena'} disabled={!seedText || starting} onPress={() => onStart({mode, candidate, difficulty, seed: Math.abs(Math.trunc(Number(seedText))) % 4294967296})} />
+        <PrimaryButton label={starting ? 'Preparing campaign…' : 'Enter the political arena'} disabled={!seedText || starting} onPress={() => onStart({mode, candidate, difficulty, seed: Math.abs(Math.trunc(Number(seedText))) % 4294967296, countryId: mode === 'grand_campaign' ? countryId : undefined})} />
       </ScreenContainer>
     </>
   );
@@ -158,13 +172,9 @@ export function SettingsScreen({settings, onBack, onChange, onPrivacy}: {setting
   );
 }
 
-export function PrivacyScreen({settings, onBack, onChange, onLocalCleared}: {settings: AppSettings; onBack: () => void; onChange: (settings: AppSettings) => void; onLocalCleared: () => Promise<void>}) {
+export function PrivacyScreen({settings, onBack, onChange}: {settings: AppSettings; onBack: () => void; onChange: (settings: AppSettings) => void}) {
   const consent = settings.consent;
   const update = (changes: Partial<typeof consent>) => onChange({...settings, consent: {...consent, ...changes, decidedAt: new Date().toISOString()}});
-  const erase = () => Alert.alert('Delete gameplay data?', 'Local campaigns, achievements, preferences, and queued telemetry will be deleted. If a server is configured, a server-side deletion request will also be attempted.', [
-    {text: 'Cancel', style: 'cancel'},
-    {text: 'Delete data', style: 'destructive', onPress: async () => { try { await deleteServerTelemetry(); await onLocalCleared(); Alert.alert('Data deleted', 'Local gameplay data was removed.'); } catch (error) { Alert.alert('Deletion incomplete', error instanceof Error ? error.message : 'Please try again.'); } }},
-  ]);
   return (
     <>
       <TopBar title="Privacy controls" subtitle="Optional gameplay data" onBack={onBack} />
@@ -173,7 +183,7 @@ export function PrivacyScreen({settings, onBack, onChange, onLocalCleared}: {set
         <SettingRow title="Gameplay analytics" description="Share minimized session, balance, and campaign events to improve the game." value={consent.analytics} onChange={() => update({analytics: !consent.analytics, collectiveLearning: !consent.analytics ? consent.collectiveLearning : false})} />
         <SettingRow title="Collective AI learning" description="Contribute anonymous game-state transitions to controlled batch training. Requires analytics consent." value={consent.collectiveLearning} disabled={!consent.analytics} onChange={() => update({collectiveLearning: !consent.collectiveLearning})} />
         <Card><Text style={type.label}>NOT COLLECTED FOR TRAINING</Text><Text style={type.subtitle}>Names, precise location, contacts, real political beliefs, voting intentions, device fingerprints, and advertising identifiers are excluded from the experience dataset.</Text></Card>
-        <PrimaryButton label="Delete local & server-linked gameplay data" onPress={erase} tone="danger" />
+        <Card><Text style={type.label}>GAMEPLAY RECORDS</Text><Text style={type.subtitle}>Turning sharing off stops new uploads while disabled. Gameplay records already accepted by the service remain part of the game’s operational and collective-learning history, subject to the published retention policy and applicable law.</Text></Card>
       </ScreenContainer>
     </>
   );
@@ -188,7 +198,7 @@ export function ConsentIntroScreen({onChoose}: {onChoose: (analytics: boolean, l
         <Text style={type.subtitle}>Political Strategy Simulator plays fully offline. You can optionally share minimized, pseudonymous gameplay transitions so aggregated player experience can improve future AI opponents.</Text>
         <Card><Text style={styles.choiceTitle}>What is shared</Text><Text style={type.subtitle}>Simulation state features, legal moves, the selected in-game action, AI responses, reward signals, mode, turn, and outcome.</Text></Card>
         <Card><Text style={styles.choiceTitle}>What is not shared</Text><Text style={type.subtitle}>No name, account, contacts, precise location, real political beliefs, voting intention, ad identifier, or device fingerprint is included in the learning dataset.</Text></Card>
-        <Card><Text style={styles.choiceTitle}>Separate from advertising</Text><Text style={type.subtitle}>This choice does not control ads. Google’s own consent form handles advertising where required. You may change either choice later and delete gameplay data from Settings.</Text></Card>
+        <Card><Text style={styles.choiceTitle}>Separate from advertising</Text><Text style={type.subtitle}>This choice does not control ads. Google’s own consent form handles advertising where required. You may change either choice later; turning sharing off stops new uploads while disabled.</Text></Card>
         <PrimaryButton label="Share analytics & learning data" onPress={() => onChoose(true, true)} />
         <PrimaryButton label="Play without sharing" onPress={() => onChoose(false, false)} tone="dark" />
       </ScreenContainer>
@@ -206,7 +216,7 @@ export function AboutScreen({onBack}: {onBack: () => void}) {
       <TopBar title="About & legal" subtitle={`Version ${APP.version}`} onBack={onBack} />
       <ScreenContainer>
         <HeroBrand />
-        <Card><Text style={styles.choiceTitle}>A fictional strategy game</Text><Text style={type.subtitle}>Political Strategy Simulator is an original, nonpartisan game by {APP.developer}. It is not affiliated with, endorsed by, or representative of any government, candidate, political party, or election authority. All candidates, countries, events, polls, and outcomes are fictional simulations.</Text></Card>
+        <Card><Text style={styles.choiceTitle}>An alternate-history strategy game</Text><Text style={type.subtitle}>Political Strategy Simulator is an original, nonpartisan game by {APP.developer}. It is not affiliated with, endorsed by, or representative of any government, candidate, political party, or election authority. The Grand Campaign uses real country names and broad resource categories as selectable starting profiles. Its ratings are not live statistics; all leaders, events, alignments, wars, forecasts, and outcomes are fictional.</Text></Card>
         <Card><Text style={styles.choiceTitle}>Free with advertising</Text><Text style={type.subtitle}>Every mode is free. There are no purchases, subscriptions, paid campaigns, energy timers, or rewarded ads. Google Mobile Ads may process advertising data subject to consent and Google’s policies.</Text></Card>
         <Card><Text style={styles.choiceTitle}>Open data notice</Text><Text style={type.subtitle}>The U.S. strategic map uses public-domain Census-derived boundary data distributed by us-atlas. Electoral votes use the 2020 census apportionment for the fictional 2028 scenario.</Text></Card>
         <Card><Text style={type.label}>CONTACT</Text><Text style={type.body}>{APP.supportEmail}</Text><Text style={type.small}>Support, privacy, and data requests.</Text></Card>
@@ -220,6 +230,7 @@ const styles = StyleSheet.create({
   quickRow: {flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center'}, fictionNotice: {color: colors.darkMuted, textAlign: 'center', fontSize: 9, lineHeight: 14, letterSpacing: 1.1, marginVertical: spacing.md},
   modeCard: {backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', minHeight: 145}, pressed: {opacity: 0.78}, modeIcon: {width: 52, height: 52, borderRadius: 18, backgroundColor: '#243C4A', alignItems: 'center', justifyContent: 'center', marginRight: spacing.md}, modeIconText: {color: colors.gold, fontSize: 25}, modeCopy: {flex: 1}, modeNumber: {color: colors.gold, fontSize: 9, fontWeight: '900', letterSpacing: 1.4}, modeTitle: {color: colors.text, fontSize: 19, fontWeight: '900', marginTop: 2}, modeSubtitle: {color: colors.goldSoft, fontSize: 12, fontWeight: '700', marginTop: 2}, modeObjective: {color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 7}, chevron: {color: colors.gold, fontSize: 32, paddingLeft: 8},
   choiceCard: {backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: spacing.md, flexDirection: 'row', alignItems: 'center'}, choiceActive: {borderColor: colors.gold, backgroundColor: '#1A3242'}, choiceRadio: {width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.gold, marginRight: spacing.md, alignItems: 'center', justifyContent: 'center'}, choiceDot: {width: 10, height: 10, borderRadius: 5, backgroundColor: colors.gold}, choiceTitle: {color: colors.text, fontSize: 16, fontWeight: '800'}, choiceMeta: {color: colors.muted, fontSize: 12, marginTop: 3},
+  countryGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm}, countryPill: {backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm}, countryPillActive: {borderColor: colors.gold, backgroundColor: '#1A3242'}, countryPillText: {color: colors.muted, fontSize: 11, fontWeight: '800'}, countryPillTextActive: {color: colors.goldSoft}, countryCard: {gap: spacing.sm, borderColor: colors.gold}, countrySummary: {marginTop: spacing.xs}, countryStats: {flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, paddingVertical: spacing.xs}, countryStatValue: {color: colors.goldSoft, fontWeight: '900'}, countryResource: {marginTop: spacing.sm}, resourceHeading: {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2}, resourceName: {color: colors.text, fontSize: 12, fontWeight: '800'}, resourceCapacity: {color: colors.teal, fontSize: 11, fontWeight: '900'}, resourceCategory: {color: colors.darkMuted, fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginBottom: spacing.xs}, profileNotice: {color: colors.darkMuted, fontSize: 9, lineHeight: 14, marginTop: spacing.sm},
   input: {height: 48, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.ink, color: colors.text, fontSize: 17, paddingHorizontal: spacing.md}, spaceBottom: {marginBottom: spacing.md}, spaceTop: {marginTop: spacing.md}, grow: {flex: 1},
   saveHeader: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.sm}, status: {color: colors.teal, fontSize: 9, fontWeight: '900', letterSpacing: 1}, statusEnded: {color: colors.gold}, locked: {opacity: 0.46}, achievementRow: {flexDirection: 'row', alignItems: 'center'}, achievementIcon: {color: colors.gold, fontSize: 26, width: 44}, settingRow: {flexDirection: 'row', alignItems: 'center'},
 });

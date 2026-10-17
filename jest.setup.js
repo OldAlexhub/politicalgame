@@ -30,3 +30,30 @@ jest.mock('react-native-google-mobile-ads', () => {
     InterstitialAd: {createForAdRequest: () => ({addAdEventListener: jest.fn(), load: jest.fn(), show: jest.fn().mockResolvedValue(undefined)})},
   };
 });
+
+jest.mock('react-native-sound', () => {
+  class MockSound {
+    static MAIN_BUNDLE = '';
+    static instances = [];
+    static setCategory = jest.fn();
+
+    constructor(filename, basePath, onLoad) {
+      this.filename = filename;
+      this.basePath = basePath;
+      this.onLoad = onLoad;
+      this.loaded = false;
+      this.setVolume = jest.fn(() => this);
+      this.setNumberOfLoops = jest.fn(() => this);
+      this.play = jest.fn(() => this);
+      this.stop = jest.fn(callback => { if (this.loaded) callback?.(); return this; });
+      this.release = jest.fn(() => { this.loaded = false; });
+      MockSound.instances.push(this);
+    }
+
+    finishLoad(error = null) {
+      this.loaded = !error;
+      this.onLoad?.(error);
+    }
+  }
+  return {__esModule: true, default: MockSound};
+});

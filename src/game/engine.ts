@@ -22,6 +22,7 @@ export interface CreateCampaignOptions {
   mode: GameMode;
   difficulty?: Difficulty;
   candidateId?: string;
+  countryId?: string;
   seed?: number;
   createdAt?: string;
 }
@@ -29,7 +30,7 @@ export interface CreateCampaignOptions {
 export function createCampaign(options: CreateCampaignOptions): GameState {
   const seed = Math.abs(Math.trunc(options.seed ?? Date.now())) % 4294967296;
   const difficulty = options.difficulty ?? 'standard';
-  const scenario = createScenario(options.mode);
+  const scenario = createScenario(options.mode, options.countryId);
   const difficultyDelta = difficulty === 'veteran' ? -300 : difficulty === 'strategist' ? -600 : 0;
   const createdAt = options.createdAt ?? new Date().toISOString();
   return {
@@ -50,7 +51,7 @@ export function createCampaign(options: CreateCampaignOptions): GameState {
     scheduledEffects: [],
     pendingEvent: null,
     seenEvents: [],
-    history: [{id: stableId('history', seed, 0), turn: 0, kind: 'system', timing: 'systemic', title: scenario.scenarioName, detail: 'The campaign begins. Every decision will shape this political system.'}],
+    history: [{id: stableId('history', seed, 0), turn: 0, kind: 'system', timing: 'systemic', title: scenario.scenarioName, detail: options.mode === 'grand_campaign' ? 'This alternate-history simulation begins. Country names and broad resource profiles are real; all future events, alignments, wars, and outcomes are fictional.' : 'The campaign begins. Every decision will shape this political system.'}],
     actionHistory: [],
     policyVersion: BASELINE_POLICY_VERSION,
     createdAt,
@@ -75,6 +76,7 @@ export function getLegalActions(state: GameState): ActionDefinition[] {
   }
   return getActions(state.mode).filter(action => {
     if ((action.minimumTurn ?? 0) > state.turn) return false;
+    if (action.maximumTreasury !== undefined && state.treasury > action.maximumTreasury) return false;
     if (action.once && state.actionHistory.some(previous => previous.id === action.id)) return false;
     const candidates = action.target === 'nation' ? (state.world?.nations.filter(item => !item.player) ?? []) : action.target === 'territory' ? (state.world?.territories ?? []) : [];
     const worldAvailable = candidates.length ? candidates.some(target => canUseWorldAction(state, action, target.id)) : canUseWorldAction(state, action);
@@ -193,7 +195,21 @@ export function processTurn(current: GameState, input: ActionInput, aiDirective?
   }
   state.turn += 1;
   resolveScheduledEffects(state, records, resolutionId);
+  const worldBefore = state.world ? captureMetrics(state) : undefined;
+  const territoryRevenue = state.world?.territories
+    .filter(item => item.ownerId === state.world!.playerNationId)
+    .reduce((sum, item) => sum + Math.round(item.wealth / 65), 0) ?? 0;
+  const commercialRevenue = state.world?.deals
+    .filter(deal => !state.world!.nations.find(nation => nation.id === deal.nationId)?.atWar)
+    .reduce((sum, deal) => sum + deal.annualIncome, 0) ?? 0;
+  const warUpkeep = (state.world?.wars.filter(war => !war.targetNationId).length ?? 0) * 260;
   const worldNews = advanceWorld(state);
+  if (worldBefore) {
+    const worldImpacts = diffMetrics(worldBefore, state);
+    records.push(record(state, 'system', 'World-year settlement', `Territories were due to contribute ${territoryRevenue}; active commercial agreements ${commercialRevenue}; war upkeep ${warUpkeep}. Disruptions and breached agreements are reflected in the final change.`, {
+      resolutionId, timing: 'systemic', impacts: worldImpacts,
+    }));
+  }
   for (const item of worldNews) records.push(record(state, item.severity === 'crisis' ? 'event' : 'system', item.headline, item.detail, {resolutionId, timing: item.severity === 'crisis' ? 'event' : 'systemic'}));
   ageCharactersIfNeeded(state);
   maybeCreateEvent(state, records, resolutionId);
@@ -342,6 +358,7 @@ function resolveOpponent(state: GameState, records: HistoricalRecord[], directiv
 function resolveWorldPolicyDirective(state: GameState, records: HistoricalRecord[], action: number): ActionInput {
   const world = state.world;
   if (!world) return {id: 'rl:world-unavailable'};
+  const sovereign = world.nations.find(item => item.id === world.playerNationId)?.name ?? 'Your country';
   const rivals = world.nations.filter(item => !item.player);
   const neighbors = (nationId: string) => world.territories.some(land => land.ownerId === nationId && land.neighbors.some(id => world.territories.some(border => border.id === id && border.ownerId === world.playerNationId)));
   const publish = (headline: string, detail: string, severity: 'brief' | 'pressure' | 'crisis' = 'pressure') => {
@@ -357,11 +374,11 @@ function resolveWorldPolicyDirective(state: GameState, records: HistoricalRecord
       world.deals = world.deals.filter(item => item.id !== deal.id);
       state.economy.growth = clamp(state.economy.growth - (action === 0 ? 160 : 240));
       state.treasury = Math.max(0, state.treasury - Math.round(deal.annualIncome * (action === 0 ? 0.5 : 0.8)));
-      publish(action === 0 ? 'Trade routes face a coordinated embargo' : 'A cross-border consortium collapses', action === 0 ? 'A rival power blocks commercial access and cuts Orinthian revenue.' : 'Foreign partners withdraw from an industrial contract, exposing Orinthian supply chains.');
+      publish(action === 0 ? 'Trade routes face a coordinated embargo' : 'A cross-border consortium collapses', action === 0 ? `A rival power blocks commercial access and cuts ${sovereign}'s revenue.` : `Foreign partners withdraw from an industrial contract, exposing ${sovereign}'s supply chains.`);
     } else {
       if (target) target.relation = Math.max(-100, target.relation - (action === 0 ? 12 : 8));
       state.economy.growth = clamp(state.economy.growth - 120);
-      publish('Commercial pressure builds', 'Rival capitals redirect trade and investment away from Orinth, threatening future income.');
+      publish('Commercial pressure builds', `Rival capitals redirect trade and investment away from ${sovereign}, threatening future income.`);
     }
   } else if (action === 2) {
     const pair = rivals.filter(item => item.id !== target?.id && !item.allied && !target?.pactIds?.includes(item.id)).sort((a, b) => b.power - a.power)[0];
@@ -369,20 +386,20 @@ function resolveWorldPolicyDirective(state: GameState, records: HistoricalRecord
       target.pactIds = [...new Set([...(target.pactIds ?? []), pair.id])];
       pair.pactIds = [...new Set([...(pair.pactIds ?? []), target.id])];
       target.relation = Math.max(-100, target.relation - 10);
-      publish('Rival powers sign a defense pact', `${target.name} and ${pair.name} coordinate their forces. Their compact shifts the balance against Orinth.`, 'crisis');
+      publish('Rival powers sign a defense pact', `${target.name} and ${pair.name} coordinate their forces. Their compact shifts the balance against ${sovereign}.`, 'crisis');
     } else {
       state.influence = Math.max(0, state.influence - 180);
-      publish('Diplomatic isolation campaign', 'Foreign envoys coordinate a public campaign questioning Orinth’s reliability.');
+      publish('Diplomatic isolation campaign', `Foreign envoys coordinate a public campaign questioning ${sovereign}'s reliability.`);
     }
   } else if (action === 3) {
     const aggressor = rivals.filter(item => !item.atWar && !item.allied && neighbors(item.id)).sort((a, b) => b.aggression - a.aggression)[0];
     if (aggressor) {
       aggressor.atWar = true; aggressor.relation = Math.max(-100, aggressor.relation - 28);
       world.wars.push({id: stableId('rl-war', state.seed, state.turn), nationId: aggressor.id, yearsActive: 0, casualties: 0});
-      publish(`${aggressor.name} declares war on Orinth`, 'Enemy forces cross the frontier. Mobilize, seek allies, organize resistance, or pursue a ceasefire.', 'crisis');
+      publish(`${aggressor.name} declares war on ${sovereign}`, 'Enemy forces cross the frontier. Mobilize, seek allies, organize resistance, or pursue a ceasefire.', 'crisis');
     } else {
       if (target) target.power = Math.min(10000, target.power + 650);
-      publish('Border ultimatum issued', 'A rival government escalates its claims and begins preparing forces near Orinth’s borders.', 'crisis');
+      publish('Border ultimatum issued', `A rival government escalates its claims and begins preparing forces near ${sovereign}'s borders.`, 'crisis');
     }
   } else if (action === 4) {
     const warNation = activeWar ? world.nations.find(item => item.id === activeWar.nationId) : undefined;
@@ -397,7 +414,7 @@ function resolveWorldPolicyDirective(state: GameState, records: HistoricalRecord
   } else if (action === 5) {
     if (target) target.power = Math.min(10000, target.power + 900);
     state.publicSentiment = Math.max(0, state.publicSentiment - 80);
-    publish('Foreign armies mobilize', `${target?.name ?? 'Rival powers'} expands its readiness. Orinth faces a growing military imbalance.`);
+    publish('Foreign armies mobilize', `${target?.name ?? 'Rival powers'} expands its readiness. ${sovereign} faces a growing military imbalance.`);
   } else if (action === 6) {
     if (activeWar) {
       const nation = world.nations.find(item => item.id === activeWar.nationId);
@@ -410,8 +427,8 @@ function resolveWorldPolicyDirective(state: GameState, records: HistoricalRecord
           land.ownerId = nation.id; land.formerPlayerLand = true; land.unrest = 6500;
           world.army = Math.max(0, world.army - 520); state.legitimacy = Math.max(0, state.legitimacy - 250);
           publish(`${land.name} falls to enemy forces`, `${nation.name} captures ${land.name}. Occupation and resistance now shape the front.`, 'crisis');
-        } else publish('Enemy offensive stalls', `${nation.name} fails to break Orinthian lines, but the war continues.`, 'crisis');
-      } else publish('Enemy offensive blocked', 'Orinth’s forces hold the current line; the rival will seek another opening.');
+        } else publish('Enemy offensive stalls', `${nation.name} fails to break ${sovereign}'s lines, but the war continues.`, 'crisis');
+      } else publish('Enemy offensive blocked', `${sovereign}'s forces hold the current line; the rival will seek another opening.`);
     } else {
       if (target) target.power = Math.min(10000, target.power + 500);
       publish('Frontier forces concentrate', 'A rival army massed near the border raises the risk of a sudden offensive.', 'crisis');
@@ -429,7 +446,7 @@ function resolveWorldPolicyDirective(state: GameState, records: HistoricalRecord
       unsettled.resistance = Math.min(10000, unsettled.resistance + 500);
       state.legitimacy = Math.max(0, state.legitimacy - 120);
       publish(`Foreign-backed unrest in ${unsettled.name}`, 'Outside actors funnel support to local hardliners, increasing unrest and weakening civil authority.', 'crisis');
-    } else publish('Resistance networks intensify', 'Underground groups coordinate across occupied territory and challenge Orinth’s control.', 'crisis');
+    } else publish('Resistance networks intensify', `Underground groups coordinate across occupied territory and challenge ${sovereign}'s control.`, 'crisis');
     }
   }
   return {id: `rl:world-${['trade', 'business', 'alliance', 'war', 'peace', 'mobilization', 'offensive', 'resistance'][action]}`};
@@ -466,6 +483,11 @@ function resolvePolicyDirective(state: GameState, records: HistoricalRecord[], d
 }
 
 function applyPoliticalDynamics(state: GameState) {
+  const growthPressure = Math.round((state.economy.growth - 5000) / 65);
+  const pricePressure = Math.max(0, Math.round((state.economy.inflation - 5000) / 80));
+  state.economy.employment = clamp(state.economy.employment + growthPressure - pricePressure);
+  state.economy.inequality = clamp(state.economy.inequality + Math.round((state.economy.inflation - 5000) / 90) - Math.round((state.economy.employment - 5000) / 100));
+  state.economy.resilience = clamp(state.economy.resilience + Math.round((state.economy.growth + state.economy.employment - state.economy.inflation - state.economy.inequality) / 150));
   const economySignal = Math.round((state.economy.growth + state.economy.employment + state.economy.resilience - state.economy.inflation - state.economy.inequality) / 60);
   state.publicSentiment = clamp(state.publicSentiment + economySignal);
   const factionAverage = average(state.factions.map(faction => faction.support));
@@ -475,6 +497,14 @@ function applyPoliticalDynamics(state: GameState) {
   state.economy.growth = clamp(state.economy.growth + Math.round((state.economy.resilience - state.economy.inflation) / 70));
   state.economy.inflation = clamp(state.economy.inflation + (state.treasury < 700 ? 100 : -25));
   state.treasury = Math.max(0, state.treasury + Math.round((state.economy.growth - 4000) / 7));
+  if (state.treasury < 500) {
+    const severity = Math.round((500 - state.treasury) / 5);
+    state.economy.inflation = clamp(state.economy.inflation + 90 + severity);
+    state.economy.resilience = clamp(state.economy.resilience - 100 - severity);
+    state.economy.employment = clamp(state.economy.employment - 60 - Math.round(severity / 2));
+    state.publicSentiment = clamp(state.publicSentiment - 70 - Math.round(severity / 2));
+    state.legitimacy = clamp(state.legitimacy - 40 - Math.round(severity / 3));
+  }
 }
 
 function resolveScheduledEffects(state: GameState, records: HistoricalRecord[], resolutionId: string) {
@@ -495,9 +525,17 @@ function resolveScheduledEffects(state: GameState, records: HistoricalRecord[], 
 
 function maybeCreateEvent(state: GameState, records: HistoricalRecord[], resolutionId: string) {
   const interval = state.mode === 'grand_campaign' ? 2 : 3;
-  if (state.pendingEvent || state.status !== 'active' || state.turn % interval !== 0) return;
+  if (state.pendingEvent || state.status !== 'active') return;
   const templates = eventTemplates(state.mode).filter(event => !state.seenEvents.includes(event.templateId));
   if (!templates.length) return;
+  const insolvency = state.treasury < 300 ? templates.find(event => event.templateId === 'treasury-collapse') : undefined;
+  if (insolvency) {
+    state.pendingEvent = {...insolvency, id: stableId('event', state.seed, state.turn)};
+    state.seenEvents.push(insolvency.templateId);
+    records.push(record(state, 'event', insolvency.title, insolvency.narrative, {resolutionId, timing: 'event'}));
+    return;
+  }
+  if (state.turn % interval !== 0) return;
   const draw = nextRandom(state.randomState);
   state.randomState = draw.state;
   if (draw.value > 0.78) return;
@@ -509,11 +547,46 @@ function maybeCreateEvent(state: GameState, records: HistoricalRecord[], resolut
 
 function eventTemplates(mode: GameMode): Array<Omit<PoliticalEvent, 'id'>> {
   const shared: Array<Omit<PoliticalEvent, 'id'>> = [{
+    templateId: 'treasury-collapse', title: 'The treasury cannot meet its obligations', severity: 'crisis',
+    narrative: 'Payrolls, suppliers, and essential services are all competing for cash that does not exist. Markets are freezing and political allies demand to know who will absorb the loss.',
+    choices: [
+      choice('bridge-loan', 'Accept a punitive bridge loan', 'Restore operations immediately, but surrender credibility and commit the next government to repayment.', [{path: 'treasury', amount: 1600}, {path: 'legitimacy', amount: -280}, {path: 'economy.inflation', amount: 180}], {delay: 2, source: 'Bridge-loan repayment', changes: [{path: 'treasury', amount: -700}, {path: 'economy.resilience', amount: -180}], narrative: 'The emergency bridge loan comes due and creditors demand priority over public investment.'}),
+      choice('monetize-deficit', 'Monetize the deficit', 'Create liquidity without creditors, causing a severe price shock and a public loss of confidence.', [{path: 'treasury', amount: 1050}, {path: 'economy.inflation', amount: 520}, {path: 'publicSentiment', amount: -220}, {path: 'economy.resilience', amount: -140}]),
+    ],
+  }, {
     templateId: 'fiscal-warning', title: 'Fiscal warning', severity: 'pressure',
     narrative: 'Independent analysts warn that short-term commitments are crowding out resilience.',
     choices: [
       choice('trim', 'Trim commitments', 'Protect the treasury but disappoint a coalition.', [{path: 'treasury', amount: 550}, {path: 'publicSentiment', amount: -230}]),
       choice('invest', 'Invest through it', 'Use reserves to preserve momentum.', [{path: 'treasury', amount: -500}, {path: 'economy.resilience', amount: 360}, {path: 'publicSentiment', amount: 180}]),
+    ],
+  }, {
+    templateId: 'credit-freeze', title: 'Banks freeze withdrawals', severity: 'crisis',
+    narrative: 'A confidence shock hits the banking system overnight. Queues form outside branches while businesses warn that payrolls will fail without immediate liquidity.',
+    choices: [
+      choice('deposit-guarantee', 'Guarantee deposits', 'Spend public reserves to stop the panic and preserve the productive economy.', [{path: 'treasury', amount: -750}, {path: 'legitimacy', amount: 220}, {path: 'economy.resilience', amount: 400}], {delay: 2, source: 'Banking-system recovery', changes: [{path: 'economy.growth', amount: 180}, {path: 'treasury', amount: 260}], narrative: 'Credit begins moving again and the state recovers part of its emergency support.'}),
+      choice('managed-failure', 'Force a managed failure', 'Preserve public cash, but accept layoffs and a painful loss of confidence.', [{path: 'treasury', amount: 180}, {path: 'economy.employment', amount: -320}, {path: 'publicSentiment', amount: -280}, {path: 'economy.inflation', amount: -120}]),
+    ],
+  }, {
+    templateId: 'national-strike', title: 'A national strike shuts the transport network', severity: 'crisis',
+    narrative: 'Workers demand wages that match prices. Ports, rail lines, and government offices are slowing to a halt as rival factions compete to control the streets.',
+    choices: [
+      choice('wage-pact', 'Negotiate a wage pact', 'Buy a durable settlement at a fiscal and inflationary cost.', [{path: 'treasury', amount: -520}, {path: 'economy.employment', amount: 240}, {path: 'economy.inflation', amount: 180}, {path: 'economy.inequality', amount: -300}, {path: 'publicSentiment', amount: 180}]),
+      choice('emergency-arbitration', 'Impose emergency arbitration', 'Restart transport quickly while risking a deeper political backlash.', [{path: 'economy.growth', amount: 120}, {path: 'legitimacy', amount: -220}, {path: 'publicSentiment', amount: -320}, {path: 'momentum', amount: -140}]),
+    ],
+  }, {
+    templateId: 'industrial-bid', title: 'A strategic industry asks for a national partner', severity: 'opportunity',
+    narrative: 'Engineers present a plan for a major domestic industry. Public ownership promises long returns; private concessions offer fast cash and faster inequality.',
+    choices: [
+      choice('public-stake', 'Take a public stake', 'Commit capital now for a delayed return and a stronger industrial base.', [{path: 'treasury', amount: -650}, {path: 'economy.employment', amount: 160}], {delay: 3, source: 'Strategic industry dividend', changes: [{path: 'treasury', amount: 1250}, {path: 'economy.growth', amount: 260}, {path: 'economy.resilience', amount: 180}], narrative: 'The new strategic industry reaches production and pays its first public dividend.'}),
+      choice('private-concession', 'Grant a private concession', 'Take immediate cash while concentrating the gains and weakening public trust.', [{path: 'treasury', amount: 760}, {path: 'economy.growth', amount: 140}, {path: 'economy.inequality', amount: 280}, {path: 'legitimacy', amount: -170}]),
+    ],
+  }, {
+    templateId: 'energy-price-shock', title: 'Energy prices surge', severity: 'pressure',
+    narrative: 'A supply shock reaches households and factories. Every option moves the pain between the treasury, prices, growth, and public confidence.',
+    choices: [
+      choice('temporary-subsidy', 'Fund a temporary subsidy', 'Shield households now while weakening reserves and long-term resilience.', [{path: 'treasury', amount: -600}, {path: 'economy.inflation', amount: -300}, {path: 'publicSentiment', amount: 220}, {path: 'economy.resilience', amount: -140}]),
+      choice('absorb-shock', 'Let prices adjust', 'Protect reserves but accept inflation, slower output, and public anger.', [{path: 'treasury', amount: 180}, {path: 'economy.inflation', amount: 360}, {path: 'economy.growth', amount: -160}, {path: 'publicSentiment', amount: -300}]),
     ],
   }];
   if (mode === 'presidential') return [...shared, {
@@ -549,7 +622,7 @@ function eventTemplates(mode: GameMode): Array<Omit<PoliticalEvent, 'id'>> {
   }];
   if (mode === 'grand_campaign') return [...shared, {
     templateId: 'world-border-crisis', title: 'Border crisis: the North March', severity: 'crisis',
-    narrative: 'A patrol clash on the northern frontier has left soldiers dead. The Karsic court denies involvement; the Defense Directorate demands a response before the rival can set the terms.',
+    narrative: 'A patrol clash on the northern frontier has left soldiers dead. The neighboring government denies involvement; the Defense Directorate demands a response before the rival can set the terms.',
     choices: [
       choice('international-inquiry', 'Demand an international inquiry', 'Protect legitimacy and seek evidence, but appear cautious to the General Staff.', [{path: 'legitimacy', amount: 280}, {path: 'influence', amount: -260}, {path: 'momentum', amount: -160}]),
       choice('forward-deployment', 'Deploy forces to the frontier', 'Deter another incursion and reassure the army, at a steep treasury cost.', [{path: 'treasury', amount: -650}, {path: 'momentum', amount: 240}, {path: 'publicSentiment', amount: -120}]),
@@ -579,25 +652,26 @@ function eventTemplates(mode: GameMode): Array<Omit<PoliticalEvent, 'id'>> {
   }];
 }
 
-function choice(id: string, label: string, description: string, effects: MetricChange[]): EventChoice {
-  return {id, label, description, effects};
+function choice(id: string, label: string, description: string, effects: MetricChange[], delayedEffects?: EventChoice['delayedEffects']): EventChoice {
+  return {id, label, description, effects, delayedEffects};
 }
 
 function evaluateCampaign(state: GameState, records: HistoricalRecord[], resolutionId: string) {
   const avgFaction = average(state.factions.map(item => item.support));
   const avgInstitution = average(state.institutions.map(item => item.confidence));
   if (state.mode === 'grand_campaign') {
+    const world = state.world;
+    const sovereign = world?.nations.find(item => item.id === world.playerNationId)?.name ?? 'Your country';
     if (state.legitimacy < 350 && state.publicSentiment < 350 && state.treasury < 150) {
-      finish(state, 'defeat', 'The Republic fractures', 'Civil authority, public confidence, and the treasury have all failed. The world continues without Orinthian leadership.', records, resolutionId);
+      finish(state, 'defeat', 'The state fractures', `Civil authority, public confidence, and the treasury have all failed. The world continues without ${sovereign}'s leadership.`, records, resolutionId);
       return;
     }
     if (state.turn <= state.maxTurns) return;
-    const world = state.world;
     const holdings = world?.territories.filter(item => item.ownerId === world.playerNationId).length ?? 0;
     const allies = world?.nations.filter(item => item.allied).length ?? 0;
-    if (holdings >= 7) finish(state, 'victory', 'The Orinthian sphere', `After a century of struggle, Orinth controls ${holdings} territories and shapes the balance of power across the continent.`, records, resolutionId);
-    else if (holdings >= 5 && allies >= 2 && state.economy.growth >= 4200 && state.legitimacy >= 4200) finish(state, 'transitioned', 'A durable continental order', 'Orinth ends the century secure at home, prosperous, and bound to two allies by institutions rather than conquest.', records, resolutionId);
-    else finish(state, 'defeat', 'The century closes in retreat', `Orinth holds ${holdings} territories and ${allies} formal allies. Rival powers have set the continental order; the republic survives only at their sufferance.`, records, resolutionId);
+    if (holdings >= 7) finish(state, 'victory', `${sovereign}'s sphere`, `After a century of struggle, ${sovereign} controls ${holdings} territories and shapes the balance of power across the region.`, records, resolutionId);
+    else if (holdings >= 5 && allies >= 2 && state.economy.growth >= 4200 && state.legitimacy >= 4200) finish(state, 'transitioned', 'A durable regional order', `${sovereign} ends the century secure at home, prosperous, and bound to two allies by institutions rather than conquest.`, records, resolutionId);
+    else finish(state, 'defeat', 'The century closes in retreat', `${sovereign} holds ${holdings} territories and ${allies} formal allies. Rival powers have set the regional order; the government survives only at their sufferance.`, records, resolutionId);
     return;
   }
   if (state.legitimacy < 900 || state.publicSentiment < 900 || avgFaction < 800) {

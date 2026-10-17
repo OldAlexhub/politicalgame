@@ -87,7 +87,7 @@ android {
         applicationId "com.oldalexhub.politicalstrategysimulator"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
+        versionCode 13
         versionName "1.1.3"
     }
     signingConfigs {

@@ -144,16 +144,6 @@ export async function unlockAchievements(state: GameState): Promise<string[]> {
   return result;
 }
 
-export async function clearLocalData() {
-  const ids = await listSaveIds();
-  const owned = (await AsyncStorage.getAllKeys()).filter(key => key.startsWith('@pss/'));
-  await Promise.all([...new Set([
-    SAVE_INDEX_KEY, SETTINGS_KEY, ACHIEVEMENTS_KEY,
-    ...ids.flatMap(id => [slotKey(id), temporarySlotKey(id)]),
-    ...owned,
-  ])].map(key => AsyncStorage.removeItem(key)));
-}
-
 interface LegacySaveSlot {
   schemaVersion: 1;
   slotId: string;

@@ -13,14 +13,19 @@ type SoundConstructor = {
 };
 
 let ambience: SoundHandle | undefined;
+let ambienceRequested = false;
 
 function soundLibrary(): SoundConstructor {
-  const Sound = require('react-native-sound') as SoundConstructor;
-  Sound.setCategory('Ambient', true);
+  const imported = require('react-native-sound') as SoundConstructor & {default?: SoundConstructor};
+  const Sound = imported.default ?? imported;
+  // Use the device's media volume. Android maps "Ambient" to the notification
+  // stream, which is commonly muted even when the user expects game audio.
+  Sound.setCategory('Playback', true);
   return Sound;
 }
 
-export function setWorldAmbience(enabled: boolean) {
+export function setGameMusic(enabled: boolean) {
+  ambienceRequested = enabled;
   if (!enabled) {
     const current = ambience;
     ambience = undefined;
@@ -30,11 +35,20 @@ export function setWorldAmbience(enabled: boolean) {
   if (ambience) return;
   const Sound = soundLibrary();
   let current: SoundHandle;
-  current = new Sound('world_ambience.wav', Sound.MAIN_BUNDLE, error => {
-    if (error) { current.release(); if (ambience === current) ambience = undefined; }
+  current = new Sound('playwhileplay.wav', Sound.MAIN_BUNDLE, error => {
+    if (error || !ambienceRequested || ambience !== current) {
+      current.release();
+      if (ambience === current) ambience = undefined;
+      return;
+    }
+    current.setVolume(0.24).setNumberOfLoops(-1).play(success => {
+      if (!success) {
+        current.release();
+        if (ambience === current) ambience = undefined;
+      }
+    });
   });
   ambience = current;
-  current.setVolume(0.12).setNumberOfLoops(-1).play();
 }
 
 export function playWorldCue(cue: 'breaking_news.wav' | 'war_horn.wav', enabled: boolean) {
@@ -42,8 +56,11 @@ export function playWorldCue(cue: 'breaking_news.wav' | 'war_horn.wav', enabled:
   const Sound = soundLibrary();
   let sound: SoundHandle | undefined;
   sound = new Sound(cue, Sound.MAIN_BUNDLE, error => {
-    if (error) sound?.release();
+    if (error) {
+      sound?.release();
+      return;
+    }
+    sound?.setVolume(cue === 'war_horn.wav' ? 0.72 : 0.58).play(() => sound?.release());
   });
-  sound.setVolume(cue === 'war_horn.wav' ? 0.28 : 0.2).play(() => sound?.release());
 }
 

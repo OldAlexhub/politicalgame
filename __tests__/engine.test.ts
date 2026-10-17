@@ -1,5 +1,6 @@
 import {createCampaign, extractFeatures, forecastAction, getLegalActions, processTurn, SimulationError} from '../src/game/engine';
 import {getCampaignClock} from '../src/game/campaignClock';
+import {COUNTRY_PROFILES} from '../src/game/data/countries';
 import {TOTAL_ELECTORAL_VOTES} from '../src/game/data/usStates';
 import {ActionInput, GameMode, GameState} from '../src/game/types';
 import {canUseWorldAction} from '../src/game/world';
@@ -127,34 +128,46 @@ describe('deterministic simulation engine', () => {
   });
 
   it('supports commerce, alliances, war, conquest, peace, and resistance', () => {
-    const commerce = processTurn(createCampaign({mode: 'grand_campaign', seed: 90}), {id: 'trade-corridor', targetId: 'valedorn'}).state;
-    expect(commerce.world?.deals.some(deal => deal.nationId === 'valedorn' && deal.kind === 'trade')).toBe(true);
+    const commerceStart = createCampaign({mode: 'grand_campaign', seed: 90});
+    const trade = getLegalActions(commerceStart).find(action => action.id === 'trade-corridor')!;
+    const tradePartner = commerceStart.world!.nations.find(nation => !nation.player && canUseWorldAction(commerceStart, trade, nation.id))!;
+    const commerce = processTurn(commerceStart, {id: trade.id, targetId: tradePartner.id}).state;
+    expect(commerce.world?.deals.some(deal => deal.nationId === tradePartner.id && deal.kind === 'trade')).toBe(true);
     expect(commerce.world?.news.some(item => item.headline === 'New trade corridor')).toBe(true);
 
-    const alliance = processTurn(createCampaign({mode: 'grand_campaign', seed: 91}), {id: 'mutual-defense', targetId: 'valedorn'}).state;
-    expect(alliance.world?.nations.find(nation => nation.id === 'valedorn')?.allied).toBe(true);
+    const allianceStart = createCampaign({mode: 'grand_campaign', seed: 91});
+    const pact = getLegalActions(allianceStart).find(action => action.id === 'mutual-defense')!;
+    const ally = allianceStart.world!.nations.find(nation => !nation.player && canUseWorldAction(allianceStart, pact, nation.id))!;
+    const alliance = processTurn(allianceStart, {id: pact.id, targetId: ally.id}).state;
+    expect(alliance.world?.nations.find(nation => nation.id === ally.id)?.allied).toBe(true);
 
-    let war = processTurn(createCampaign({mode: 'grand_campaign', seed: 92}), {id: 'declare-war', targetId: 'karsic'}).state;
-    expect(war.world?.wars.some(item => item.nationId === 'karsic' && !item.targetNationId)).toBe(true);
-    expect(war.world?.nations.find(nation => nation.id === 'karsic')?.atWar).toBe(true);
+    const warStart = createCampaign({mode: 'grand_campaign', seed: 92});
+    const declaration = getLegalActions(warStart).find(action => action.id === 'declare-war')!;
+    const enemy = warStart.world!.nations.find(nation => !nation.player && canUseWorldAction(warStart, declaration, nation.id))!;
+    let war = processTurn(warStart, {id: declaration.id, targetId: enemy.id}).state;
+    expect(war.world?.wars.some(item => item.nationId === enemy.id && !item.targetNationId)).toBe(true);
+    expect(war.world?.nations.find(nation => nation.id === enemy.id)?.atWar).toBe(true);
     war.pendingEvent = null;
     war.treasury = 10000;
     war.influence = 10000;
     war.randomState = 0;
     war.world!.army = 10000;
-    war.world!.nations.find(nation => nation.id === 'karsic')!.power = 1000;
-    war.world!.territories.find(land => land.id === 'karsic-gate')!.wealth = 0;
-    war = processTurn(war, {id: 'invade-territory', targetId: 'karsic-gate'}).state;
-    expect(war.world?.territories.find(land => land.id === 'karsic-gate')?.ownerId).toBe('orinth');
+    war.world!.nations.find(nation => nation.id === enemy.id)!.power = 1000;
+    const invasion = getLegalActions(war).find(action => action.id === 'invade-territory')!;
+    const targetLand = war.world!.territories.find(land => canUseWorldAction(war, invasion, land.id))!;
+    targetLand.wealth = 0;
+    const playerNationId = war.world!.playerNationId;
+    war = processTurn(war, {id: invasion.id, targetId: targetLand.id}).state;
+    expect(war.world?.territories.find(land => land.id === targetLand.id)?.ownerId).toBe(playerNationId);
     war.pendingEvent = null;
     war.influence = 10000;
-    war = processTurn(war, {id: 'negotiate-peace', targetId: 'karsic'}).state;
-    expect(war.world?.wars.some(item => item.nationId === 'karsic' && !item.targetNationId)).toBe(false);
-    expect(war.world?.nations.find(nation => nation.id === 'karsic')?.atWar).toBe(false);
+    war = processTurn(war, {id: 'negotiate-peace', targetId: enemy.id}).state;
+    expect(war.world?.wars.some(item => item.nationId === enemy.id && !item.targetNationId)).toBe(false);
+    expect(war.world?.nations.find(nation => nation.id === enemy.id)?.atWar).toBe(false);
 
     const occupied = createCampaign({mode: 'grand_campaign', seed: 93});
-    const occupier = occupied.world!.nations.find(nation => nation.id === 'karsic')!;
-    const lostLand = occupied.world!.territories.find(land => land.id === 'iron-coast')!;
+    const occupier = occupied.world!.nations.find(nation => !nation.player)!;
+    const lostLand = occupied.world!.territories.find(land => land.ownerId === occupied.world!.playerNationId)!;
     occupier.atWar = true;
     lostLand.ownerId = occupier.id;
     lostLand.formerPlayerLand = true;
@@ -162,6 +175,28 @@ describe('deterministic simulation engine', () => {
     const resistance = processTurn(occupied, {id: 'organize-resistance', targetId: lostLand.id}).state;
     expect(resistance.world?.territories.find(land => land.id === lostLand.id)?.resistance).toBeGreaterThan(0);
     expect(resistance.world?.news.some(item => item.headline === 'Resistance network organized')).toBe(true);
+  });
+
+  it('creates distinct playable real-country profiles with resources that shape the world', () => {
+    const japan = createCampaign({mode: 'grand_campaign', countryId: 'japan', seed: 94});
+    expect(japan.scenarioName).toContain('Japan');
+    expect(japan.world?.nations.find(nation => nation.player)?.name).toBe('Japan');
+    expect(japan.world?.resources).toEqual(expect.arrayContaining([expect.objectContaining({name: 'Technology'})]));
+    expect(japan.world?.territories.filter(land => land.ownerId === 'japan')).toHaveLength(5);
+
+    const nigeria = createCampaign({mode: 'grand_campaign', countryId: 'nigeria', seed: 94});
+    expect(nigeria.treasury).not.toBe(japan.treasury);
+    expect(nigeria.world?.army).not.toBe(japan.world?.army);
+    expect(nigeria.world?.resources).not.toEqual(japan.world?.resources);
+  });
+
+  it.each(COUNTRY_PROFILES)('can start a coherent campaign as $name', profile => {
+    const state = createCampaign({mode: 'grand_campaign', countryId: profile.id, seed: 95});
+    expect(state.world?.playerCountryId).toBe(profile.id);
+    expect(state.world?.nations.filter(nation => nation.player)).toHaveLength(1);
+    expect(new Set(state.world?.nations.map(nation => nation.id)).size).toBe(6);
+    expect(state.world?.resources).toHaveLength(5);
+    expect(state.world?.territories.filter(land => land.ownerId === profile.id)).toHaveLength(5);
   });
 
   it('resolves every electoral vote to one candidate on election night', () => {

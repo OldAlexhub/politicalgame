@@ -1,6 +1,7 @@
 import {ActionDefinition, CandidateProfile, GameMode, GameState, Region} from './types';
 import {createUSRegions} from './data/usStates';
 import {createWorldState} from './world';
+import {getCountryProfile} from './data/countries';
 
 export const CANDIDATES: CandidateProfile[] = [
   {id: 'mara-vale', name: 'Mara Vale', title: 'Coalition Mayor', archetype: 'coalition-builder', position: 'Civic Alliance'},
@@ -17,12 +18,14 @@ const fictionalRegions = (names: Array<[string, string]>): Region[] => names.map
   investment: 0, turnout: 6200 + index * 170, volatility: 500 + index * 45, issue,
 }));
 
-export function createScenario(mode: GameMode): ScenarioSeed {
-  if (mode === 'grand_campaign') return {
-    scenarioName: 'The Orinthian Century', maxTurns: 120, treasury: 7200, influence: 4800,
+export function createScenario(mode: GameMode, countryId?: string): ScenarioSeed {
+  if (mode === 'grand_campaign') {
+    const country = getCountryProfile(countryId);
+    return {
+    scenarioName: `${country.name}: An Alternate Century`, maxTurns: 120, treasury: country.treasury, influence: Math.round((country.power + 3500) / 2),
     legitimacy: 6200, publicSentiment: 5400, momentum: 5000, corruption: 1800,
-    economy: {growth: 5200, employment: 5400, inflation: 4100, inequality: 4800, resilience: 5600},
-    regions: fictionalRegions([['Orinth Capital', 'state capacity'], ['Iron Coast', 'industry'], ['Verdant Plain', 'food security'], ['North March', 'border defense'], ['Sunward Ports', 'foreign commerce']]),
+    economy: {...country.economy},
+    regions: fictionalRegions([[`${country.capital} District`, 'state capacity'], [`${country.name} Industrial Belt`, 'industry'], [`${country.name} Agricultural Basin`, 'food security'], [`${country.name} Frontier`, 'border defense'], [`${country.name} Trade Gateway`, 'foreign commerce']]),
     actors: [
       {id: 'chancellor', name: 'Sera Venn', role: 'Chancellor', factionId: 'council', loyalty: 7600, trust: 6900, ambition: 4600, riskTolerance: 3800, age: 44, memory: []},
       {id: 'marshal', name: 'Kade Arven', role: 'Defense Marshal', factionId: 'defense', loyalty: 6500, trust: 5200, ambition: 7100, riskTolerance: 7700, age: 52, memory: []},
@@ -39,8 +42,9 @@ export function createScenario(mode: GameMode): ScenarioSeed {
       {id: 'courts', name: 'High Tribunal', authority: 6500, confidence: 6100, alignment: 5200},
       {id: 'army', name: 'General Staff', authority: 7800, confidence: 6700, alignment: 6500},
     ],
-    world: createWorldState(),
+    world: createWorldState(country.id),
   };
+  }
   if (mode === 'presidential') {
     return {
       scenarioName: 'The Open 2028 Election', maxTurns: 14, treasury: 6800, influence: 3200,
@@ -140,6 +144,12 @@ const commonActions: ActionDefinition[] = [
   {id: 'broker-coalition', label: 'Broker coalition', description: 'Negotiate shared priorities with a political bloc.', category: 'coalition', cost: {influence: 650}, target: 'faction', effects: [{path: 'faction.support', amount: 650}, {path: 'faction.cohesion', amount: 180}, {path: 'legitimacy', amount: 120}]},
   {id: 'invest-region', label: 'Regional initiative', description: 'Direct resources to a strategic region and its central concern.', category: 'economy', cost: {treasury: 750}, target: 'region', effects: [{path: 'region.support', amount: 520}, {path: 'economy.employment', amount: 120}], delayedEffects: {delay: 2, source: 'Regional initiative', changes: [{path: 'economy.growth', amount: 180}, {path: 'publicSentiment', amount: 140}], narrative: 'The regional initiative begins producing visible economic results.'}},
   {id: 'strengthen-institution', label: 'Strengthen institution', description: 'Fund transparent capacity and build durable confidence.', category: 'institution', cost: {treasury: 500, influence: 250}, target: 'institution', effects: [{path: 'institution.confidence', amount: 700}, {path: 'legitimacy', amount: 250}]},
+  {id: 'progressive-levy', label: 'Impose a progressive levy', description: 'Raise immediate revenue from concentrated wealth. It lowers inequality but angers powerful taxpayers and slows investment.', category: 'economy', cost: {}, target: 'none', effects: [{path: 'treasury', amount: 950}, {path: 'publicSentiment', amount: -220}, {path: 'legitimacy', amount: -80}, {path: 'economy.growth', amount: -130}, {path: 'economy.inequality', amount: -260}]},
+  {id: 'reconstruction-bonds', label: 'Issue reconstruction bonds', description: 'Borrow heavily now and accept a binding debt-service bill in three periods.', category: 'economy', cost: {influence: 180}, target: 'none', effects: [{path: 'treasury', amount: 1800}, {path: 'economy.inflation', amount: 220}, {path: 'legitimacy', amount: -120}], delayedEffects: {delay: 3, source: 'Reconstruction bond service', changes: [{path: 'treasury', amount: -850}, {path: 'economy.resilience', amount: -120}], narrative: 'Debt service on the reconstruction bonds comes due, narrowing every other fiscal choice.'}},
+  {id: 'enterprise-fund', label: 'Launch enterprise fund', description: 'Finance domestic firms and infrastructure now for jobs and a delayed public return.', category: 'economy', cost: {treasury: 900, influence: 150}, target: 'none', effects: [{path: 'economy.employment', amount: 220}, {path: 'economy.resilience', amount: 120}], delayedEffects: {delay: 2, source: 'Enterprise fund returns', changes: [{path: 'treasury', amount: 1300}, {path: 'economy.growth', amount: 300}, {path: 'economy.inequality', amount: 100}], narrative: 'The enterprise portfolio begins returning capital, output, and politically uneven gains.'}},
+  {id: 'emergency-austerity', label: 'Order emergency austerity', description: 'Protect cash reserves by cutting spending. Employment, legitimacy, and public patience will suffer.', category: 'economy', cost: {}, target: 'none', effects: [{path: 'treasury', amount: 700}, {path: 'publicSentiment', amount: -340}, {path: 'legitimacy', amount: -140}, {path: 'economy.employment', amount: -220}, {path: 'economy.inflation', amount: -120}]},
+  {id: 'emergency-financing', label: 'Negotiate emergency financing', description: 'Prevent an immediate shutdown with expensive short-term financing. Debt service and lost confidence arrive later.', category: 'economy', cost: {}, target: 'none', effects: [{path: 'treasury', amount: 1200}, {path: 'legitimacy', amount: -220}, {path: 'economy.inflation', amount: 180}], delayedEffects: {delay: 2, source: 'Emergency financing service', changes: [{path: 'treasury', amount: -600}, {path: 'economy.resilience', amount: -150}, {path: 'publicSentiment', amount: -100}], narrative: 'The emergency creditors demand payment, reopening the argument over who bears the cost.'}, maximumTreasury: 1200},
+  {id: 'civic-service-corps', label: 'Convene a civic service corps', description: 'Replace money with time and organization. Volunteers restore limited capacity while the government sacrifices momentum.', category: 'coalition', cost: {}, target: 'none', effects: [{path: 'influence', amount: 320}, {path: 'publicSentiment', amount: 100}, {path: 'momentum', amount: -100}, {path: 'economy.employment', amount: 40}]},
 ];
 
 export function getActions(mode: GameMode): ActionDefinition[] {
@@ -147,6 +157,10 @@ export function getActions(mode: GameMode): ActionDefinition[] {
     {id: 'rally', label: 'Organize rally', description: 'Mobilize supporters in a selected state.', category: 'campaign', cost: {treasury: 450}, target: 'region', effects: [{path: 'region.support', amount: 420}, {path: 'momentum', amount: 180}]},
     {id: 'advertise', label: 'Targeted advertising', description: 'Build persuasion and campaign investment in a state.', category: 'campaign', cost: {treasury: 700}, target: 'region', effects: [{path: 'region.support', amount: 560}, {path: 'publicSentiment', amount: 80}]},
     {id: 'fundraise', label: 'Fundraising circuit', description: 'Trade a little momentum for campaign cash.', category: 'campaign', cost: {influence: 250}, target: 'none', effects: [{path: 'treasury', amount: 1450}, {path: 'momentum', amount: -120}]},
+    {id: 'grassroots-drive', label: 'Launch grassroots drive', description: 'Build a broad small-donor network. It raises less cash than elite fundraising but strengthens momentum.', category: 'campaign', cost: {influence: 120}, target: 'none', effects: [{path: 'treasury', amount: 850}, {path: 'momentum', amount: 130}, {path: 'publicSentiment', amount: 90}]},
+    {id: 'donor-summit', label: 'Hold private donor summit', description: 'Secure a major cash injection while accepting a damaging perception of elite access.', category: 'campaign', cost: {influence: 320}, target: 'none', effects: [{path: 'treasury', amount: 1900}, {path: 'publicSentiment', amount: -250}, {path: 'economy.inequality', amount: 120}], minimumTurn: 2, once: true},
+    {id: 'emergency-appeal', label: 'Make an emergency public appeal', description: 'Keep the campaign operating through small emergency donations, at the cost of appearing financially cornered.', category: 'campaign', cost: {}, target: 'none', effects: [{path: 'treasury', amount: 900}, {path: 'publicSentiment', amount: 80}, {path: 'momentum', amount: -240}], maximumTreasury: 1000},
+    {id: 'volunteer-canvass', label: 'Deploy volunteer canvass', description: 'Use volunteer time instead of cash for a modest regional push. It is slow, but the campaign never loses its final legal move.', category: 'campaign', cost: {}, target: 'region', effects: [{path: 'region.support', amount: 180}, {path: 'momentum', amount: -80}, {path: 'influence', amount: 80}]},
     {id: 'debate-prep', label: 'Prepare for debate', description: 'Invest in research and message discipline before the national debate.', category: 'campaign', cost: {treasury: 400, influence: 250}, target: 'none', effects: [{path: 'momentum', amount: 450}, {path: 'publicSentiment', amount: 230}], minimumTurn: 3},
     {id: 'seek-endorsement', label: 'Seek endorsement', description: 'Win over an influential coalition.', category: 'coalition', cost: {influence: 600}, target: 'faction', effects: [{path: 'faction.support', amount: 760}, {path: 'momentum', amount: 170}]},
   ];
@@ -171,8 +185,8 @@ export function getActions(mode: GameMode): ActionDefinition[] {
     {id: 'negotiate-peace', label: 'Seek ceasefire', description: 'Offer a ceasefire to an enemy. It ends active combat and restores a little diplomatic trust, but leaves the border unsettled.', category: 'diplomacy', cost: {influence: 450}, target: 'nation', effects: [{path: 'legitimacy', amount: 180}, {path: 'publicSentiment', amount: 140}], worldEffect: 'peace'},
     {id: 'mobilize-army', label: 'Mobilize reserves', description: 'Raise force readiness before an offensive or to deter a stronger neighbor.', category: 'military', cost: {treasury: 1100}, target: 'none', effects: [{path: 'influence', amount: -100}], worldEffect: 'mobilize'},
     {id: 'invade-territory', label: 'Launch border offensive', description: 'Attack an adjacent enemy territory. Victory can extend your frontier; defeat costs lives, money, and public support.', category: 'military', cost: {treasury: 850, influence: 380}, target: 'territory', effects: [{path: 'momentum', amount: -120}], worldEffect: 'invade'},
-    {id: 'organize-resistance', label: 'Organize resistance', description: 'Arm and coordinate underground networks in occupied Orinthian land. They may liberate it in a later year.', category: 'military', cost: {treasury: 800, influence: 450}, target: 'territory', effects: [{path: 'legitimacy', amount: 110}], worldEffect: 'resistance'},
-    {id: 'rebuild-territory', label: 'Rebuild and pacify', description: 'Restore services and reduce unrest in a territory under Orinthian control.', category: 'economy', cost: {treasury: 650}, target: 'territory', effects: [{path: 'economy.resilience', amount: 90}], worldEffect: 'rebuild'},
+    {id: 'organize-resistance', label: 'Organize resistance', description: 'Arm and coordinate underground networks in occupied national territory. They may liberate it in a later year.', category: 'military', cost: {treasury: 800, influence: 450}, target: 'territory', effects: [{path: 'legitimacy', amount: 110}], worldEffect: 'resistance'},
+    {id: 'rebuild-territory', label: 'Rebuild and pacify', description: 'Restore services and reduce unrest in territory under national control.', category: 'economy', cost: {treasury: 650}, target: 'territory', effects: [{path: 'economy.resilience', amount: 90}], worldEffect: 'rebuild'},
   ];
   return [
     ...commonActions,
@@ -187,5 +201,5 @@ export const MODE_COPY: Record<GameMode, {title: string; subtitle: string; objec
   dictatorship: {title: 'The Republic', subtitle: 'Power is a coalition, not a number.', objective: 'Balance elites, institutions, the economy, and a credible political future.', icon: '◆'},
   monarchy: {title: 'The Crown', subtitle: 'Rule today. Secure tomorrow.', objective: 'Steward the realm while building a stable and legitimate succession.', icon: '♛'},
   coup: {title: 'The Transition', subtitle: 'Authority without legitimacy is fragile.', objective: 'Assemble a lawful political transition and govern the coalition that follows.', icon: '⬡'},
-  grand_campaign: {title: 'The Living World', subtitle: '120 years. Every border is contested.', objective: 'Build a lasting power through trade, alliances, and war. Conquer or lose territory, survive occupation, and shape Orinth’s next century.', icon: '✧'},
+  grand_campaign: {title: 'The Living World', subtitle: 'Choose a country. Shape an alternate century.', objective: 'Select a real-world country profile, then lead it through a fictional 120-year future of trade, alliances, crises, and war.', icon: '✧'},
 };
