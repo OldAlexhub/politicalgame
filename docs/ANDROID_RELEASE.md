@@ -1,6 +1,6 @@
 # Android release
 
-The package is `com.oldalexhub.politicalstrategysimulator`, version code `1`, and target API `36`. The minimum API is 24. Release shrinking is enabled and the release build uses a dedicated ignored signing configuration; it never falls back to the debug key.
+The package is `com.oldalexhub.politicalstrategysimulator`, version code `7`, and target API `36`. The minimum API is 24. Release shrinking is enabled and the release build uses a dedicated ignored signing configuration; it never falls back to the debug key.
 
 ## Automated build
 
