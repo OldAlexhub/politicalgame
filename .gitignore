@@ -68,6 +68,10 @@ yarn-error.log
 # testing
 /coverage
 
+# Local emulator captures and build diagnostics; keep audit JSON reviewable.
+/artifacts/*.png
+/artifacts/*.log
+
 # Yarn
 .yarn/*
 !.yarn/patches

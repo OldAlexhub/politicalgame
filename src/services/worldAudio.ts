@@ -14,6 +14,20 @@ type SoundConstructor = {
 
 let ambience: SoundHandle | undefined;
 let ambienceRequested = false;
+let contextual: SoundHandle | undefined;
+let requestedScene='quiet';
+
+export function setWorldAmbience(scene:'quiet'|'city'|'crowd'|'institution'|'crisis') {
+  if(scene===requestedScene)return;
+  requestedScene=scene;
+  const previous=contextual;contextual=undefined;previous?.stop(()=>previous.release());
+  if(scene==='quiet'||scene==='city')return;
+  const Sound=soundLibrary();
+  const file=scene==='crowd'?'political_crowd.wav':scene==='institution'?'institution.mp3':'political_crisis.wav';
+  let current:SoundHandle;
+  current=new Sound(file,Sound.MAIN_BUNDLE,error=>{if(error||requestedScene!==scene||contextual!==current){current.release();return;}current.setVolume(scene==='crowd'?.12:.08).setNumberOfLoops(-1).play();});
+  contextual=current;
+}
 
 function soundLibrary(): SoundConstructor {
   const imported = require('react-native-sound') as SoundConstructor & {default?: SoundConstructor};

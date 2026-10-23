@@ -1,0 +1,15 @@
+{
+  "engineVersion": "2.0.0",
+  "seeds": 100,
+  "years": 30,
+  "distinctOutcomes": 100,
+  "actions": 12000,
+  "officeChanges": 40,
+  "delivered": 32,
+  "broken": 602,
+  "crises": 1916,
+  "minTreasury": 0,
+  "maxDebt": 29924,
+  "maxSaveBytes": 622117,
+  "elapsedMs": 63755
+}

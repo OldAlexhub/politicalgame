@@ -7,6 +7,8 @@ import ReactTestRenderer from 'react-test-renderer';
 import {Alert, Text} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {DEFAULT_SETTINGS} from '../src/services/storage';
+jest.mock('../src/living/LivingMap',()=>({LivingMap:()=>null}));
+jest.mock('../src/living/cloud',()=>({cloud:{connected:jest.fn().mockResolvedValue(false)}}));
 
 jest.mock('../src/ui/components/StrategicMap', () => {
   const ReactModule = require('react');
@@ -33,6 +35,7 @@ test('renders the application shell', async () => {
     await Promise.resolve();
   });
   expect(tree!.root).toBeTruthy();
+  await ReactTestRenderer.act(async()=>{tree!.unmount();});
 });
 
 function findText(root: ReactTestRenderer.ReactTestInstance, value: string) {
@@ -57,15 +60,15 @@ test('enters gameplay even when the initial autosave fails', async () => {
     tree = ReactTestRenderer.create(<App />);
   });
   await ReactTestRenderer.act(async () => { await new Promise<void>(resolve => setTimeout(resolve, 0)); });
-  await ReactTestRenderer.act(async () => { pressText(tree!.root, 'Begin a new campaign')(); });
-  await ReactTestRenderer.act(async () => { pressText(tree!.root, 'Presidential Campaign')(); });
+  await ReactTestRenderer.act(async () => { pressText(tree!.root, 'Begin a political career')(); });
   (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('storage unavailable'));
   await ReactTestRenderer.act(async () => {
-    await pressText(tree!.root, 'Enter the political arena')();
+    await pressText(tree!.root, 'Enter the country')();
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   });
 
-  expect(findText(tree!.root, 'The Open 2028 Election')).toBeTruthy();
-  expect(alert).toHaveBeenCalledWith('Autosave unavailable', expect.any(String));
+  expect(findText(tree!.root, 'REGIONAL INTELLIGENCE')).toBeTruthy();
+  expect(findText(tree!.root, 'Save needs retry')).toBeTruthy();
+  await ReactTestRenderer.act(async()=>{tree!.unmount();});
   alert.mockRestore();
 });

@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "generator": "Built-in imagegen workflow",
+  "created": "2026-10-23",
+  "artDirection": {
+    "perspective": "Isometric 2D, three-quarter view with parallel verticals",
+    "lighting": "Soft daylight from the upper left",
+    "palette": "Warm limestone, terracotta, muted teal roofs, olive greenery",
+    "interfaceText": "Rendered separately by React Native; no text baked into artwork",
+    "grid": [4, 4],
+    "imageSize": [1254, 1254],
+    "cellSize": [313.5, 313.5],
+    "anchor": [0.5, 0.85],
+    "animation": "Atlas translations and small oscillations anchored to a cell; simulation and visual clocks are independent"
+  },
+  "atlases": [
+    {
+      "file": "architecture.png",
+      "source": "exec-0f3ebd50-cf41-431a-8f6f-6c75250f9c4b.png",
+      "alpha": true,
+      "frames": ["assembly", "palace", "court", "ministry", "clinic", "school", "housing", "press", "industry", "energy", "port", "market", "farm", "university", "shops", "transport"]
+    },
+    {
+      "file": "portraits.png",
+      "source": "exec-778f716c-6378-4511-8774-c775cda8cd18.png",
+      "alpha": false,
+      "frames": "16 original illustrated fictional political figures; dark neutral background"
+    },
+    {
+      "file": "citizens.png",
+      "source": "exec-d0dc7405-d578-43f5-9b0f-324a8d38fb49.png",
+      "alpha": true,
+      "frames": ["citizen-1", "citizen-2", "citizen-3", "citizen-4", "demonstrator-1", "demonstrator-2", "demonstrator-3", "demonstrator-4", "car", "bus", "truck", "boat", "tree-1", "tree-2", "flag", "scaffolding"]
+    }
+  ],
+  "audio": "Contextual layers use the existing project-provided CrowdChant, Abandoned Tense Ambience, patriotic, and playwhileplay recordings. Their existing rights/provenance remain applicable."
+}

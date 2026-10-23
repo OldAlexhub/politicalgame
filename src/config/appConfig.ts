@@ -2,12 +2,12 @@ import {TestIds} from 'react-native-google-mobile-ads';
 
 export const APP = {
   name: 'Political Strategy Simulator',
-  version: '1.1.3',
+  version: '2.0.0',
   developer: 'Old Alex Hub',
   supportEmail: 'info@oldalexhub.com',
   tagline: 'Gain Power. Rule Nations. Shape History.',
   packageName: 'com.oldalexhub.politicalstrategysimulator',
-  apiBaseUrl: 'https://game.server.oldalexhub.com',
+  apiBaseUrl: __DEV__ ? 'http://10.0.2.2:8787' : 'https://game.server.oldalexhub.com',
   modelSigningPublicKey: '8MCv919oKs7BNgx_ZEPL4CnfziwNp8S1oydSUfHZnOA',
 } as const;
 

@@ -1,0 +1,9 @@
+{
+  "device": "Android 16 x86_64 emulator, 2400x1080, release build",
+  "elapsedSeconds": 38.26,
+  "frames": 2295,
+  "averageFramesPerSecond": 59.98,
+  "jank": "5 (0.22%)",
+  "p95": "25ms",
+  "limitation": "Development measurement, not physical-device minimum FPS certification."
+}
