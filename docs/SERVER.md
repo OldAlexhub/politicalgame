@@ -1,5 +1,7 @@
 # Server, database, and dashboard
 
+For the current self-contained v2 deployment, use [the Nexus deployment guide](../../server/DEPLOY-NEXUS.md). `npm start` now supervises the API and required workers, and the configured administrator is bootstrapped automatically. The sections below describe the legacy v1 analytics/training system; optional v2 connected play adds recoverable guest accounts.
+
 ## Production configuration
 
 - `NODE_ENV=production`

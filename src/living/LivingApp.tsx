@@ -142,7 +142,7 @@ function Meter({ label, value }: { label: string; value: number }) {
   return (
     <View style={styles.meterRow}>
       <View style={styles.between}>
-        <Text style={styles.small}>{label}</Text>
+        <Text style={[styles.small, styles.flex]}>{label}</Text>
         <Text style={styles.metric}>{pct(value)}</Text>
       </View>
       <View style={styles.track}>
@@ -627,10 +627,18 @@ export default function LivingApp() {
                   ) : panel === 'parliament' ? (
                     <>
                       <Text style={styles.heading}>The balance of power</Text>
-                      <Text style={styles.bigNumber}>
-                        {coalitionSeats(world)}
-                        <Text style={styles.small}> / 100 coalition seats</Text>
-                      </Text>
+                      <View
+                        accessible
+                        accessibilityLabel={`${coalitionSeats(
+                          world,
+                        )} of 100 coalition seats`}
+                        style={styles.seatCount}
+                      >
+                        <Text style={styles.bigNumber}>
+                          {coalitionSeats(world)}
+                        </Text>
+                        <Text style={styles.small}>/ 100 coalition seats</Text>
+                      </View>
                       <Text style={styles.small}>
                         51 seats pass ordinary legislation. Constitutional
                         change also requires legitimacy.
@@ -638,7 +646,9 @@ export default function LivingApp() {
                       {world.factions.map(f => (
                         <View key={f.id} style={styles.row}>
                           <View style={styles.between}>
-                            <Text style={styles.rowTitle}>{f.name}</Text>
+                            <Text style={[styles.rowTitle, styles.flex]}>
+                              {f.name}
+                            </Text>
                             <Text style={styles.metric}>{f.seats}</Text>
                           </View>
                           <Text style={styles.small}>
@@ -759,7 +769,7 @@ export default function LivingApp() {
                           {r.cohorts.map(c => (
                             <View key={c.id} style={styles.row}>
                               <View style={styles.between}>
-                                <Text style={styles.rowTitle}>
+                                <Text style={[styles.rowTitle, styles.flex]}>
                                   {c.group.toUpperCase()}
                                 </Text>
                                 <Text style={styles.metric}>
@@ -810,7 +820,9 @@ export default function LivingApp() {
                           key={String(label)}
                           style={[styles.row, styles.between]}
                         >
-                          <Text style={styles.small}>{label}</Text>
+                          <Text style={[styles.small, styles.flex]}>
+                            {label}
+                          </Text>
                           <Text style={styles.metric}>
                             {money(Number(value))}
                           </Text>
@@ -2112,19 +2124,22 @@ function OnlinePanel({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#12252a' },
   center: { alignItems: 'center', justifyContent: 'center', gap: 15 },
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   main: { flex: 1, flexDirection: 'row' },
   topbar: {
-    height: 62,
+    minHeight: 62,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     paddingHorizontal: 16,
-    gap: 20,
+    paddingVertical: 8,
+    columnGap: 20,
+    rowGap: 8,
     backgroundColor: '#13292d',
     borderBottomColor: '#45564e',
     borderBottomWidth: 1,
   },
-  brand: { flex: 1 },
+  brand: { flex: 1, minWidth: 160 },
   country: {
     fontSize: 20,
     color: '#f1e5c9',
@@ -2139,7 +2154,9 @@ const styles = StyleSheet.create({
   timeButtons: { flexDirection: 'row', gap: 4, marginTop: 5 },
   timeButton: {
     minWidth: 32,
-    height: 26,
+    minHeight: 26,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 4,
@@ -2156,11 +2173,14 @@ const styles = StyleSheet.create({
     borderLeftColor: '#536153',
   },
   panelHeader: {
-    height: 38,
+    minHeight: 38,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 15,
+    paddingVertical: 8,
+    gap: 8,
+    flexWrap: 'wrap',
     borderBottomWidth: 1,
     borderBottomColor: '#354d49',
   },
@@ -2208,7 +2228,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   meterRow: { gap: 6, marginBottom: 4 },
-  metric: { color: '#dccb9d', fontSize: 12, fontWeight: '700' },
+  metric: { color: '#dccb9d', fontSize: 12, fontWeight: '700', flexShrink: 0 },
   track: {
     height: 4,
     backgroundColor: '#304641',
@@ -2246,7 +2266,18 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   memory: { fontSize: 9, lineHeight: 14, color: '#c4b88d' },
-  bigNumber: { fontFamily: 'serif', fontSize: 40, color: '#e4cd96' },
+  seatCount: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  bigNumber: {
+    fontFamily: 'serif',
+    fontSize: 40,
+    lineHeight: 52,
+    color: '#e4cd96',
+  },
   danger: { fontSize: 11, color: '#efa88a', lineHeight: 16 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: {
@@ -2284,7 +2315,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   dispatch: {
-    height: 55,
+    minHeight: 55,
+    paddingVertical: 8,
     backgroundColor: '#172b2d',
     flexDirection: 'row',
     alignItems: 'center',
@@ -2314,15 +2346,15 @@ const styles = StyleSheet.create({
   noticeText: { color: '#f1e4c3', fontSize: 10, flexShrink: 1 },
   nav: {
     flexGrow: 0,
-    height: 44,
-    maxHeight: 44,
+    minHeight: 44,
     backgroundColor: '#10272c',
     borderTopWidth: 1,
     borderTopColor: '#3c534c',
   },
   navContent: { paddingHorizontal: 9, gap: 3, alignItems: 'center' },
   navItem: {
-    height: 38,
+    minHeight: 38,
+    paddingVertical: 10,
     paddingHorizontal: 13,
     alignItems: 'center',
     justifyContent: 'center',

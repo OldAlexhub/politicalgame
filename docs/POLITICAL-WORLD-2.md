@@ -12,7 +12,7 @@ The national map uses original isometric sprite atlases. Population activity sca
 
 ## Simulation contract
 
-`packages/simulation` is the single pure TypeScript engine for the app, replay worker and Python training bridge. Schema 3 / engine 2.0.0 use integer political measures, seeded random state, command journals, version pins, receipts, and full causal news records.
+`packages/simulation` is the single pure TypeScript engine for the app, replay worker and Python training bridge. Server releases include a byte-identical, checksum-verified copy in `server/shared/simulation`; only the server folder is needed on Nexus. Run `npm run sync:engine` in the server folder after changing this engine and before packaging a release. Schema 3 / engine 2.0.0 use integer political measures, seeded random state, command journals, version pins, receipts, and full causal news records.
 
 - `createWorld(config, content?, policy?)` creates a seeded country.
 - `getDecisionPreview(state, command)` gives authority, costs, deadlines and directional forecasts without mutating the world.

@@ -1,0 +1,2 @@
+InsetsSource id=14d0001 type=navigationBars frame=[0,1017][2400,1080] visible=false flags=SUPPRESS_SCRIM|ANIMATE_RESIZING sideHint=BOTTOM boundingRects=null
+InsetsSource id=34540000 type=statusBars frame=[0,0][2400,63] visible=false flags= sideHint=TOP boundingRects=null
