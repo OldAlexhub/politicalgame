@@ -1,0 +1,49 @@
+{
+  "version": "2.0.3",
+  "versionCode": 18,
+  "previousVersionCode": 17,
+  "orientation": "portrait",
+  "tests": {
+    "suites": 11,
+    "passed": 111,
+    "failed": 0,
+    "typescript": "passed"
+  },
+  "builds": {
+    "apk": "signed release, verified existing upload certificate",
+    "aab": "signed release, jarsigner verified",
+    "alignment": "16 KB zip alignment verified"
+  },
+  "emulator": {
+    "avd": "PoliticalWorld_2_Test",
+    "releaseInstalled": true,
+    "preservedCareers": [
+      "Valara",
+      "Valenne"
+    ],
+    "restoredCareer": "Valara, Day 16 Feb Year 1, paused",
+    "viewsChecked": [
+      "home",
+      "career archive",
+      "country and region selection",
+      "expanded map",
+      "decision dock",
+      "Assembly",
+      "diplomacy",
+      "connected identity form"
+    ],
+    "sizes": [
+      "411 x 914 dp",
+      "360 x 640 dp with font scale 1.3"
+    ],
+    "settingsRestored": true,
+    "ads": "Test banner visually verified in portrait, including signed release on emulator; production fill is not guaranteed",
+    "performance": "Interactive development checks; no certified FPS benchmark"
+  },
+  "remainingLimitations": [
+    "iOS orientation configuration updated but iOS build not performed on Windows",
+    "AdMob account consent-message setup remains outstanding, unchanged by the portrait update"
+  ],
+  "apkSha256": "d076045497289eaffdb28c7e2f235a85d9a73176ec3691bfbf60aed954e3d603",
+  "aabSha256": "3f649f3e16ce74af56a0f25b62d1a161acd15495b612c838ca0097d534f78502"
+}

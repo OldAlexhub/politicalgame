@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Atlas,
@@ -27,6 +21,15 @@ import {
   WorldState,
 } from '../../packages/simulation';
 
+import {
+  fitMap,
+  placeMapMarkers,
+  zoomMap,
+  isometricPoint as position,
+  TILE_WIDTH,
+  TILE_HEIGHT,
+} from './mapGeometry';
+
 const architecture = require('../../assets/world/architecture.png');
 const citizens = require('../../assets/world/citizens.png');
 const buildingForProject = {
@@ -44,6 +47,7 @@ export function LivingMap({
   onInstitution,
   reduceMotion,
   paused,
+  decorative = false,
 }: {
   state: WorldState;
   selected: string;
@@ -51,6 +55,7 @@ export function LivingMap({
   onInstitution: () => void;
   reduceMotion: boolean;
   paused: boolean;
+  decorative?: boolean;
 }) {
   const [size, setSize] = useState({ width: 600, height: 400 });
   const [camera, setCamera] = useState({ zoom: 1, x: 0, y: 0 });
@@ -69,21 +74,33 @@ export function LivingMap({
     if (!reduceMotion && !paused)
       clock.value += (frame.timeSincePreviousFrame ?? 0) / 1000;
   });
-  const position = useCallback(
-    (x: number, y: number) => ({
-      x: size.width * 0.42 + ((x - y) * size.width) / 17,
-      y: size.height * 0.14 + ((x + y) * size.height) / 23,
-    }),
-    [size.width, size.height],
-  );
+  const fit = fitMap(size.width, size.height);
+  const artScale = Math.max(size.width / 800, size.height / 400) * 1.15;
+  const fitted = decorative
+    ? {
+        scale: artScale,
+        x: (size.width - 800 * artScale) / 2,
+        y: (size.height - 400 * artScale) / 2,
+      }
+    : fit;
+  const scale = fitted.scale * camera.zoom;
+  const offsetX = fitted.x + camera.x;
+  const offsetY = fitted.y + camera.y;
+  useEffect(() => {
+    setCamera({ zoom: 1, x: 0, y: 0 });
+  }, [size.width, size.height]);
+  const zoomTo = (zoom: number) =>
+    setCamera(c =>
+      zoomMap(c, zoom, size.width - 2 * fitted.x, size.height - 2 * fitted.y),
+    );
   const features = useMemo(() => {
     const tiles = [];
     for (let x = 0; x < 10; x++)
       for (let y = 0; y < 7; y++) {
         if ((x === 0 && y > 4) || (x > 7 && y < 1)) continue;
         const p = position(x, y);
-        const w = size.width / 17,
-          h = size.height / 23;
+        const w = TILE_WIDTH,
+          h = TILE_HEIGHT;
         const path = Skia.Path.MakeFromSVGString(
           `M ${p.x} ${p.y - h} L ${p.x + w} ${p.y} L ${p.x} ${p.y + h} L ${
             p.x - w
@@ -103,9 +120,7 @@ export function LivingMap({
         });
       }
     return tiles;
-    // positions depend only on canvas dimensions
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size.width, size.height, state.seed]);
+  }, [state.seed]);
   const buildings = useMemo(
     () =>
       state.regions
@@ -128,7 +143,7 @@ export function LivingMap({
           }));
         })
         .sort((a, b) => a.y + a.size - (b.y + b.size)),
-    [state.regions, state.projects, position],
+    [state.regions, state.projects],
   );
   const sources = image
     ? buildings.map(b =>
@@ -261,21 +276,23 @@ export function LivingMap({
     [size],
   );
   const screen = (p: { x: number; y: number }) => ({
-    x: p.x * camera.zoom + camera.x,
-    y: p.y * camera.zoom + camera.y,
+    x: p.x * scale + offsetX,
+    y: p.y * scale + offsetY,
   });
+  const markerPoints = state.regions.map(r => screen(position(r.x, r.y)));
+  const markers = placeMapMarkers(markerPoints, size.width, size.height);
   return (
     <View
       style={styles.map}
       onLayout={e => setSize(e.nativeEvent.layout)}
-      {...pan.panHandlers}
+      {...(decorative ? {} : pan.panHandlers)}
     >
       <Canvas ref={canvas} style={StyleSheet.absoluteFill}>
         <Group
           transform={[
-            { translateX: camera.x },
-            { translateY: camera.y },
-            { scale: camera.zoom },
+            { translateX: offsetX },
+            { translateY: offsetY },
+            { scale },
           ]}
         >
           {features.map((t, i) => (
@@ -364,94 +381,106 @@ export function LivingMap({
               );
             })}
         </Group>
+        {!decorative &&
+          markerPoints.map((p, i) => (
+            <Path
+              key={`marker-${i}`}
+              path={`M ${p.x} ${p.y} L ${markers[i].x + 16} ${
+                markers[i].y + 16
+              }`}
+              color="#c5c397"
+              style="stroke"
+              strokeWidth={1}
+              opacity={0.7}
+            />
+          ))}
       </Canvas>
-      <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-        {state.regions.map(r => {
-          const p = screen(position(r.x, r.y));
-          const pressure = activeSituations(state).filter(
-            i => i.regionId === r.id,
-          );
-          return (
-            <Pressable
-              key={r.id}
-              accessibilityRole="button"
-              accessibilityLabel={`${r.name}, happiness ${Math.round(
-                regionHappiness(state, r.id) / 100,
-              )} percent, ${pressure.length} developing situations`}
-              onPress={() => {
-                onSelect(r.id);
-                if (r.id === selected)
-                  setCamera({
-                    zoom: 1.8,
-                    x: size.width / 2 - position(r.x, r.y).x * 1.8,
-                    y: size.height * 0.45 - position(r.x, r.y).y * 1.8,
-                  });
-              }}
-              style={[
-                styles.region,
-                { left: p.x - 45, top: p.y + 30 * camera.zoom },
-                selected === r.id && styles.selected,
-              ]}
-            >
-              <Text numberOfLines={1} style={styles.regionName}>
-                {r.name}
-              </Text>
-              {selected === r.id || camera.zoom >= 1.5 ? (
-                <Text
-                  style={[
-                    styles.condition,
-                    pressure.length ? styles.pressure : null,
-                  ]}
-                >
-                  {pressure.length
-                    ? `${pressure.length} developing situation${
-                        pressure.length === 1 ? '' : 's'
-                      }`
-                    : `${Math.round(
-                        regionHappiness(state, r.id) / 100,
-                      )}% living conditions`}
+      {!decorative && (
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          {state.regions.map((r, index) => {
+            const marker = markers[index];
+            const pressure = activeSituations(state).filter(
+              i => i.regionId === r.id,
+            );
+            return (
+              <Pressable
+                key={r.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${r.name}, happiness ${Math.round(
+                  regionHappiness(state, r.id) / 100,
+                )} percent, ${pressure.length} developing situations`}
+                onPress={() => {
+                  onSelect(r.id);
+                  if (r.id === selected)
+                    setCamera({
+                      zoom: 1.8,
+                      x:
+                        size.width / 2 -
+                        fitted.x -
+                        position(r.x, r.y).x * fitted.scale * 1.8,
+                      y:
+                        size.height * 0.45 -
+                        fitted.y -
+                        position(r.x, r.y).y * fitted.scale * 1.8,
+                    });
+                }}
+                style={[
+                  styles.region,
+                  { left: marker.x, top: marker.y },
+                  selected === r.id && styles.selected,
+                ]}
+              >
+                <Text numberOfLines={1} style={styles.regionName}>
+                  {index + 1}
                 </Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.legend}>
-        <View style={styles.dot} />
-        <Text style={styles.legendText}>
-          THE COUNTRY · {state.regime.toUpperCase()}
-        </Text>
-      </View>
-      <View style={styles.controls}>
+                {pressure.length > 0 && <View style={styles.situationDot} />}
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {!decorative && size.width > 520 && (
+        <View style={styles.legend}>
+          <View style={styles.dot} />
+          <Text style={styles.legendText}>
+            THE COUNTRY · {state.regime.toUpperCase()}
+          </Text>
+        </View>
+      )}
+      {!decorative && (
+        <View style={styles.controls}>
+          <Pressable
+            accessibilityLabel="Zoom out"
+            onPress={() => zoomTo(Math.max(0.65, camera.zoom - 0.3))}
+            style={styles.control}
+          >
+            <Text style={styles.controlText}>−</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Reset map"
+            onPress={() => setCamera({ zoom: 1, x: 0, y: 0 })}
+            style={styles.control}
+          >
+            <Text style={styles.reset}>HOME</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Zoom in"
+            onPress={() => zoomTo(Math.min(3, camera.zoom + 0.3))}
+            style={styles.control}
+          >
+            <Text style={styles.controlText}>+</Text>
+          </Pressable>
+        </View>
+      )}
+      {!decorative && size.height > 230 && (
         <Pressable
-          accessibilityLabel="Zoom out"
-          onPress={() =>
-            setCamera(c => ({ ...c, zoom: Math.max(0.65, c.zoom - 0.2) }))
-          }
-          style={styles.control}
+          accessibilityRole="button"
+          onPress={onInstitution}
+          style={styles.assembly}
         >
-          <Text style={styles.controlText}>−</Text>
+          <Text style={styles.assemblyText}>ENTER THE ASSEMBLY →</Text>
         </Pressable>
-        <Pressable
-          accessibilityLabel="Reset map"
-          onPress={() => setCamera({ zoom: 1, x: 0, y: 0 })}
-          style={styles.control}
-        >
-          <Text style={styles.reset}>HOME</Text>
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Zoom in"
-          onPress={() =>
-            setCamera(c => ({ ...c, zoom: Math.min(2, c.zoom + 0.2) }))
-          }
-          style={styles.control}
-        >
-          <Text style={styles.controlText}>+</Text>
-        </Pressable>
-      </View>
-      <Pressable onPress={onInstitution} style={styles.assembly}>
-        <Text style={styles.assemblyText}>ENTER THE ASSEMBLY →</Text>
-      </Pressable>
+      )}
     </View>
   );
 }
@@ -459,13 +488,23 @@ const styles = StyleSheet.create({
   map: { flex: 1, backgroundColor: '#294f54', overflow: 'hidden' },
   region: {
     position: 'absolute',
-    width: 90,
-    minHeight: 24,
+    width: 32,
+    minHeight: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
     padding: 4,
-    borderRadius: 4,
     backgroundColor: '#172a2ee8',
     borderWidth: 1,
     borderColor: '#67786c',
+  },
+  situationDot: {
+    position: 'absolute',
+    right: -3,
+    top: -3,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#ee9471',
   },
   selected: { borderColor: '#e9cc81', backgroundColor: '#283c38' },
   regionName: {
@@ -504,8 +543,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   control: {
-    minWidth: 36,
-    height: 36,
+    minWidth: 44,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#152b2cdd',

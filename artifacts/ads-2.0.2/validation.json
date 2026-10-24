@@ -1,0 +1,36 @@
+{
+  "appVersion": "2.0.2",
+  "versionCode": 17,
+  "orientation": "sensorLandscape; portrait redesign planned, not implemented",
+  "checks": {
+    "typescript": "passed",
+    "jest": {
+      "suites": 10,
+      "tests": 104,
+      "result": "passed"
+    },
+    "releaseApk": "assembleRelease passed",
+    "releaseBundle": "bundleRelease passed",
+    "apkSignature": "verified, existing upload certificate",
+    "apkAlignment": "16 KB zip alignment verified",
+    "bundleSignature": "jarsigner verified",
+    "emulator": {
+      "avd": "PoliticalWorld_2_Test",
+      "package": "com.oldalexhub.politicalstrategysimulator.dev",
+      "testBanner": "visually verified on home and during gameplay",
+      "testInterstitial": "visually verified after successful save and return home",
+      "afterInterstitial": "home and banner restored; immersive fullscreen retained",
+      "productionFill": "not verified; tests used Google test ads"
+    }
+  },
+  "remainingAccountSetup": "AdMob UMP reports no configured consent message for this app. AdMob European regulations Messages page confirmed none published. Account configuration unchanged.",
+  "evidence": [
+    "home.png",
+    "game.png",
+    "interstitial.png",
+    "returned-home.png",
+    "alignment.log"
+  ],
+  "apkSha256": "d3bbebc41eb59db63b788980e6e75202333c0629e21274a8cf53d234c9f6953b",
+  "aabSha256": "635ff22ca200cd594d42264deea04fb28882669baa43a7664d67a8b8303f4c85"
+}

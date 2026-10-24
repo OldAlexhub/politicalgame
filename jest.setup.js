@@ -15,19 +15,21 @@ jest.mock('@react-native-async-storage/async-storage', () => {
 
 jest.mock('react-native-google-mobile-ads', () => {
   const React = require('react');
+  const sdk = {initialize: jest.fn().mockResolvedValue([])};
   return {
     __esModule: true,
-    default: () => ({initialize: jest.fn().mockResolvedValue([])}),
+    default: () => sdk,
     BannerAd: () => React.createElement(React.Fragment),
     BannerAdSize: {ANCHORED_ADAPTIVE_BANNER: 'ANCHORED_ADAPTIVE_BANNER'},
     TestIds: {ADAPTIVE_BANNER: 'test-banner', INTERSTITIAL: 'test-interstitial'},
-    AdEventType: {LOADED: 'loaded', CLOSED: 'closed', ERROR: 'error'},
+    AdEventType: {LOADED: 'loaded', CLOSED: 'closed', ERROR: 'error', IMPRESSION: 'impression'},
     AdsConsent: {
       requestInfoUpdate: jest.fn().mockResolvedValue({canRequestAds: true}),
       loadAndShowConsentFormIfRequired: jest.fn().mockResolvedValue({canRequestAds: true}),
+      getConsentInfo: jest.fn().mockResolvedValue({canRequestAds: true}),
       showPrivacyOptionsForm: jest.fn().mockResolvedValue({canRequestAds: true}),
     },
-    InterstitialAd: {createForAdRequest: () => ({addAdEventListener: jest.fn(), load: jest.fn(), show: jest.fn().mockResolvedValue(undefined)})},
+    InterstitialAd: {createForAdRequest: jest.fn(() => ({addAdEventListener: jest.fn(), load: jest.fn(), show: jest.fn().mockResolvedValue(undefined)}))},
   };
 });
 

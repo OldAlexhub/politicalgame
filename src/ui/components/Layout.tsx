@@ -56,24 +56,40 @@ export function SafeAdContainer({visible = true, placement, onRequest, onLoad, o
 }) {
   const insets = useSafeAreaInsets();
   const [retry, setRetry] = useState(0);
+  const [width, setWidth] = useState(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onRequestRef = useRef(onRequest);
   useEffect(() => { onRequestRef.current = onRequest; }, [onRequest]);
   useEffect(() => {
-    if (visible) onRequestRef.current?.();
-  }, [visible, placement, retry]);
+    if (visible && width > 0) onRequestRef.current?.();
+  }, [visible, placement, retry, width]);
+  useEffect(() => {
+    if (!visible && retryTimer.current) {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
+  }, [visible]);
   useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
   if (!visible) return null;
   return (
-    <View style={[styles.adContainer, {paddingBottom: Math.max(insets.bottom, spacing.xs)}]}>
+    <View
+      testID="advertising-footer"
+      onLayout={event => setWidth(Math.floor(event.nativeEvent.layout.width))}
+      style={[styles.adContainer, {paddingBottom: Math.max(insets.bottom, spacing.xs)}]}>
       <Text style={styles.adLabel}>ADVERTISEMENT</Text>
-      <BannerAd
-        key={`${placement}-${retry}`}
+      {width > 0 && <BannerAd
+        key={`${placement}-${width}-${retry}`}
         unitId={ADMOB.bannerId}
         size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-        onAdLoaded={onLoad}
+        width={width}
+        onAdLoaded={() => {
+          if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
+          if (__DEV__) console.info('[ads] banner_loaded');
+          onLoad?.();
+        }}
         onAdImpression={onImpression}
-        onAdFailedToLoad={() => {
+        onAdFailedToLoad={error => {
+          console.warn('[ads] banner_load_failed', error.code ?? error.message);
           onFailure?.();
           if (retryTimer.current) clearTimeout(retryTimer.current);
           retryTimer.current = setTimeout(() => {
@@ -81,7 +97,7 @@ export function SafeAdContainer({visible = true, placement, onRequest, onLoad, o
             setRetry(value => value + 1);
           }, 60_000);
         }}
-      />
+      />}
     </View>
   );
 }
@@ -147,5 +163,5 @@ const styles = StyleSheet.create({
   stat: {minWidth: 92, flex: 1, backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.md}, statLabel: {color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.7, textTransform: 'uppercase'}, statValue: {color: colors.text, fontSize: 20, fontWeight: '900', marginTop: 4}, good: {color: colors.teal}, warning: {color: colors.red},
   meter: {height: 7, borderRadius: radius.pill, backgroundColor: '#071722', overflow: 'hidden'}, meterFill: {height: '100%', borderRadius: radius.pill},
   bottomBar: {backgroundColor: colors.navy, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, paddingHorizontal: spacing.sm, paddingTop: spacing.sm, flexDirection: 'row', gap: spacing.xs},
-  adContainer: {alignItems: 'center', minHeight: 58, backgroundColor: '#081521', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line}, adLabel: {color: colors.darkMuted, fontSize: 7, letterSpacing: 1.4, marginVertical: 2},
+  adContainer: {alignSelf: 'stretch', flexShrink: 0, alignItems: 'center', minHeight: 58, paddingTop: 6, backgroundColor: '#081521', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line}, adLabel: {color: colors.darkMuted, fontSize: 7, letterSpacing: 1.4, marginVertical: 2},
 });

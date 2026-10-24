@@ -15,13 +15,15 @@ export function isInterstitialEligible(cap: AdCapState, now: number) {
   return count < ADMOB.maximumInterstitialsPerDay && now - cap.lastShownAt >= ADMOB.minimumInterstitialIntervalMs;
 }
 
-class AdvertisingManager {
+export class AdvertisingManager {
   private initialized = false;
+  private initializationFailed = false;
   private initializing: Promise<boolean> | null = null;
   private interstitial: ReturnType<typeof InterstitialAd.createForAdRequest> | null = null;
   private loaded = false;
   private loading = false;
   private loadedAt = 0;
+  private showing = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readyListeners = new Set<(ready: boolean) => void>();
   private eventListeners = new Set<(event: AdvertisingEvent) => void>();
@@ -47,13 +49,21 @@ class AdvertisingManager {
     return this.initializing;
   }
 
+  async retryInitialization() {
+    // Retry transport/SDK failures, never repeatedly reopen a completed consent flow.
+    return this.initializationFailed ? this.initialize() : this.initialized;
+  }
+
   private async initializeOnce() {
+    this.initializationFailed = false;
     try {
       let canRequestAds = false;
       try {
         await AdsConsent.requestInfoUpdate();
         canRequestAds = (await AdsConsent.loadAndShowConsentFormIfRequired()).canRequestAds;
-      } catch {
+      } catch (error) {
+        this.initializationFailed = true;
+        console.warn('[ads] consent_update_failed', error instanceof Error ? error.message : 'unknown');
         // A temporary consent-network failure must not discard a valid choice from a prior session.
         canRequestAds = (await AdsConsent.getConsentInfo().catch(() => ({canRequestAds: false}))).canRequestAds;
       }
@@ -61,10 +71,13 @@ class AdvertisingManager {
       await mobileAds().initialize();
       this.prepareInterstitial();
       this.initialized = true;
+      this.initializationFailed = false;
       this.emitReady();
       this.loadInterstitial();
       return true;
-    } catch {
+    } catch (error) {
+      this.initializationFailed = true;
+      console.warn('[ads] initialization_failed', error instanceof Error ? error.message : 'unknown');
       // Ads are optional; gameplay remains fully available when consent/network/SDK fails.
       return false;
     }
@@ -77,16 +90,23 @@ class AdvertisingManager {
     this.interstitial = InterstitialAd.createForAdRequest(ADMOB.interstitialId);
     this.interstitial.addAdEventListener(AdEventType.LOADED, () => {
       this.loading = false;
+      if (!this.initialized) return;
       this.loaded = true;
       this.loadedAt = Date.now();
       this.emitEvent('interstitial_loaded');
     });
     this.interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+      this.showing = false;
       this.loaded = false;
       this.loadedAt = 0;
       this.loadInterstitial();
     });
-    this.interstitial.addAdEventListener(AdEventType.ERROR, () => {
+    this.interstitial.addAdEventListener(AdEventType.IMPRESSION, () => {
+      this.emitEvent('interstitial_impression');
+    });
+    this.interstitial.addAdEventListener(AdEventType.ERROR, error => {
+      console.warn('[ads] interstitial_failed', error?.message ?? 'unknown');
+      this.showing = false;
       this.loading = false;
       this.loaded = false;
       this.loadedAt = 0;
@@ -96,7 +116,7 @@ class AdvertisingManager {
   }
 
   private loadInterstitial() {
-    if (!this.initialized || !this.interstitial || this.loading || this.loaded) return;
+    if (!this.initialized || !this.interstitial || this.loading || this.loaded || this.showing) return;
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
     this.loading = true;
     this.emitEvent('interstitial_request');
@@ -116,8 +136,9 @@ class AdvertisingManager {
     }, INTERSTITIAL_RETRY_MS);
   }
 
-  async showAtNaturalTransition() {
-    if (!this.initialized) await this.initialize();
+  async showAtNaturalTransition(canShow: () => boolean = () => true) {
+    // A transition must not wait for consent or a new download, then show an ad late.
+    if (!this.initialized || this.showing || !canShow()) return false;
     if (!this.interstitial || !this.loaded) {
       this.loadInterstitial();
       return false;
@@ -129,28 +150,45 @@ class AdvertisingManager {
       this.loadInterstitial();
       return false;
     }
-    const fallback: AdCapState = {day: '', count: 0, lastShownAt: 0};
-    let cap = fallback;
-    try { cap = JSON.parse(await AsyncStorage.getItem(CAP_KEY) ?? JSON.stringify(fallback)); } catch {}
-    if (!isInterstitialEligible(cap, now)) return false;
+    this.showing = true;
+    let presented = false;
     try {
+      const fallback: AdCapState = {day: '', count: 0, lastShownAt: 0};
+      let cap = fallback;
+      try {
+        const stored = JSON.parse(await AsyncStorage.getItem(CAP_KEY) ?? 'null');
+        if (stored && typeof stored.day === 'string' && Number.isInteger(stored.count) && stored.count >= 0 && Number.isFinite(stored.lastShownAt) && stored.lastShownAt >= 0)
+          cap = stored;
+      } catch { /* Recover damaged legacy cap data instead of permanently disabling ads. */ }
+      if (!isInterstitialEligible(cap, now) || !this.initialized || !canShow()) return false;
+      this.loaded = false;
       await this.interstitial.show();
+      presented = true;
       const day = new Date(now).toISOString().slice(0, 10);
       await AsyncStorage.setItem(CAP_KEY, JSON.stringify({day, count: cap.day === day ? cap.count + 1 : 1, lastShownAt: now}));
-      this.loaded = false;
-      this.emitEvent('interstitial_impression');
       return true;
     } catch {
-      this.loaded = false;
       this.emitEvent('interstitial_failure');
-      this.loadInterstitial();
       return false;
+    } finally {
+      if (!presented) {
+        this.showing = false;
+        this.loadInterstitial();
+      }
     }
   }
 
   async showPrivacyOptions() {
     const result = await AdsConsent.showPrivacyOptionsForm();
     if (result.canRequestAds) await this.initialize();
+    else {
+      this.initialized = false;
+      this.initializationFailed = false;
+      this.loading = false;
+      this.loaded = false;
+      if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
+      this.emitReady();
+    }
     return result;
   }
 }
